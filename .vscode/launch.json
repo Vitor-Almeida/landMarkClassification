@@ -11,7 +11,7 @@
             "timeout": 100,
             "program": "${file}",
             "console": "integratedTerminal",
-            "justMyCode": true
+            "justMyCode": false
         }
     ]
 }

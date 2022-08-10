@@ -3,7 +3,7 @@
 *.tar
 *.tar.gz
 *.rar
-*.csv
+#*.csv
 *.env
 *.png
 *.props
