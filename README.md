@@ -1,4 +1,4 @@
-![alt text](docs/logo.png)
+![alt text](docs/logo1.png)
 
 Classification of https://case.law/ cases by landmark cases from www.law.cornell.edu !
 
