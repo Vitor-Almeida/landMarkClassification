@@ -1,4 +1,3 @@
-# landMarkClassification
 ![alt text](docs/logo.png)
 
 Classification of https://case.law/ cases by landmark cases from www.law.cornell.edu
