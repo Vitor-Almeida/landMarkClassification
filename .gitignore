@@ -5,7 +5,6 @@
 *.rar
 #*.csv
 *.env
-*.png
 *.props
 data/
 ############
