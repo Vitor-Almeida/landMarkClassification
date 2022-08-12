@@ -132,13 +132,13 @@ def main():
 
     num_class = len(set([label for (label, text) in train_iter]))
     vocab_size = len(vocab)
-    emsize = 8192
+    emsize = 512
     model = TextClassificationModel(vocab_size, emsize, num_class).to(device)
 
     # Hyperparameters
-    EPOCHS = 10 # epoch
-    LR = 0.5  # learning rate
-    BATCH_SIZE = 8 # batch size for training
+    EPOCHS = 100 # epoch
+    LR = 5  # learning rate
+    BATCH_SIZE = 4 # batch size for training
 
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=LR)

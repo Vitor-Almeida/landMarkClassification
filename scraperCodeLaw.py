@@ -4,6 +4,10 @@ from selenium.webdriver.common.by import By
 import re
 import pandas as pd
 
+##tirar nome de lei e nome de pessoas?
+## tem ums paradas de [xxxxxxx] tirar tudo isso?
+##apagar : .' . 1 .1 * * * . . .
+
 options = Options()
 options.add_argument("--headless")
 driver = Firefox(executable_path="geckodriver", options = options)
