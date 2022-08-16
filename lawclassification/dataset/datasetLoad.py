@@ -1,20 +1,31 @@
 import torch
 import pandas as pd
 import numpy as np
+import os
 from torch.utils.data import Dataset, DataLoader
 
-class FaceLandmarksDataset(Dataset):
-    """Landmarks dataset"""
+#from utils.definitions import ROOT_DIR
 
-    def __init__(self, csv_file, transform=None):
+ROOT_DIR = '/home/jaco/Projetos/landMarkClassification'
 
-        self.landmarks_frame = pd.read_csv(csv_file)
+#pyton -m dataset.landMarkTorchDataset => rodar testes 
+
+class yelpReview(Dataset):
+    """
+    Load raw data in a pytorch dataset class
+    All data will follow the (label,text) format
+    """
+
+    def __init__(self, transform=None):
+        #self.landmarks_frame = pd.read_json(os.path.join(ROOT_DIR,'/data/yelp/raw/yelp_academic_dataset_review.json'), lines=True)
+        self.landmarks_frame = pd.read_json(ROOT_DIR+'/data/yelp/raw/yelp_academic_dataset_review.json', lines=True)
         self.transform = transform
 
     def __len__(self):
         return len(self.landmarks_frame)
 
     def __getitem__(self, idx):
+
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
@@ -28,7 +39,10 @@ class FaceLandmarksDataset(Dataset):
 
         return sample
 
-#def main():
+def main():
+
+    data = yelpReview()
+    print('cu')
 
     #filePath = '/home/jaco/Projetos/landMarkClassification/data/onlyLandMarkWSyllabus.csv'
     
@@ -36,8 +50,8 @@ class FaceLandmarksDataset(Dataset):
 
     #train_iter = iter(FaceLandmarksDataset(csv_file=filePath))
 
-    #return None
+    return None
 
 
-#if __name__ == '__main__':
-    #main()
+if __name__ == '__main__':
+    main()
