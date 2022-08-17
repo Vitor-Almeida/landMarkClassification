@@ -11,6 +11,9 @@ class deep_models():
     def __init__(self, model_name, batchsize, max_char_length, lr, epochs, warmup_size, class_fun, dropout):
         super(deep_models, self).__init__()
 
+        #baixar modelo e deixar offline:
+        #git clone https://huggingface.co/bert-base-uncased
+
         logging.set_verbosity_error() #remove annoying transformers warnings.
 
         self.model_name = model_name
@@ -48,6 +51,8 @@ class deep_models():
         ########## AQUI TEM QUE CONGELAR DEPENDENDO DO INPUT #############
         #### checar se os learning rate são de fato diferente por camada
         #### checar alguns padroes da softmax da ultima layer de classificacao desse bixo
+        #### entender oq é decay, 
+        #### entender se o learning rate é diferente para cada um, e se eles mudam diferente.
         for _,param in enumerate(list(self.model.bert.named_parameters())):
             if param[0].find('encoder.layer.11.') != -1:
                 param[1].requires_grad = True

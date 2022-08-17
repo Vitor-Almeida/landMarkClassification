@@ -1,41 +1,25 @@
-import numpy as np
-import time
-import datetime
+def printLog(idx,cur_epoch,model,accuracy):
 
-# Function to calculate the accuracy of our predictions vs labels
-def flat_accuracy(preds, labels):
-    pred_flat = np.argmax(preds, axis=1).flatten()
-    labels_flat = labels.flatten()
-    return np.sum(pred_flat == labels_flat) / len(labels_flat)
+    log_interval = int(model.total_steps/50)
 
-def get_time():
-    return(time.time())
+    if idx == -1:
+        print('| end of epoch {:3d} '
+        '| test accuracy {:8.3f}'.format(cur_epoch+1, accuracy))
 
-def format_time(elapsed):
-    '''
-    Takes a time in seconds and returns a string hh:mm:ss
-    '''
-    # Round to the nearest second.
-    elapsed_rounded = int(round((elapsed)))
-    
-    # Format as hh:mm:ss
-    return str(datetime.timedelta(seconds=elapsed_rounded))
+    if idx % log_interval == 0 and idx > 0:
+        print('| epoch {:3d} | {:5d}/{:5d} batches '
+                '| train accuracy {:8.3f}'.format(cur_epoch+1, idx, len(model.train_dataloader),
+                                            accuracy))
 
-def print_model_layers(model):
-    params = list(model.named_parameters())
-    print('The BERT model has {:} different named parameters.\n'.format(len(params)))
+    return None
 
-    print('==== Embedding Layer ====\n')
+def printParamsTerminal(model):
 
-    for p in params[0:5]:
-        print("{:<55} {:>12}".format(p[0], str(tuple(p[1].size()))))
+    print('-'*22,'Parameters:','-'*22)
+    print(f'modelo: {model.model_name} | batchsize: {model.batchsize} | max_tokens = {model.max_char_length} | learning_rate = {model.lr}')
+    print(f'epochs = {model.epochs} | warmup_size = {model.warmup_size} | dropout = {model.dropout}')
+    print(f'num_labels = {model.num_labels} | dataset_length = {len(model.dataset_train.labels)} | dataset_name = {model.dataset_train.name}')
+    print(f'random_seed = {model.seed_val}')
+    print('-'*59)
 
-    print('\n==== First Transformer ====\n')
-
-    for p in params[5:21]:
-        print("{:<55} {:>12}".format(p[0], str(tuple(p[1].size()))))
-
-    print('\n==== Output Layer ====\n')
-
-    for p in params[-4:]:
-        print("{:<55} {:>12}".format(p[0], str(tuple(p[1].size()))))
+    return None

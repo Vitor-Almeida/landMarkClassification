@@ -3,12 +3,13 @@
 *.tar
 *.tar.gz
 *.rar
-#*.csv
+*.csv
 *.env
 *.props
 data/
 external/
 ############
+todo.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
