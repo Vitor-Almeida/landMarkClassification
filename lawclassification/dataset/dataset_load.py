@@ -1,4 +1,5 @@
-from torch import is_tensor,tensor,long
+#from torch import is_tensor,tensor,long
+import torch
 import pandas as pd
 import os
 from torch.utils.data import Dataset
@@ -14,9 +15,9 @@ class yelpReview(Dataset):
     def __init__(self, typeSplit,tokenizer,max_length):
 
         super(yelpReview, self).__init__()
-
-        self.dataframe = pd.read_csv(os.path.join(ROOT_DIR,'data','yelp','interm',typeSplit,typeSplit+'.csv'))
-        self.target = self.dataframe.iloc[:,0]
+        self.name = 'yelp'
+        self.dataframe = pd.read_csv(os.path.join(ROOT_DIR,'data',self.name,'interm',typeSplit,typeSplit+'.csv'))
+        self.labels = self.dataframe.iloc[:,0]
         self.text = self.dataframe.iloc[:,1]
         self.max_length = max_length
         self.tokenizer = tokenizer
@@ -26,7 +27,7 @@ class yelpReview(Dataset):
 
     def __getitem__(self, idx):
 
-        if is_tensor(idx):
+        if torch.is_tensor(idx):
             idx = idx.tolist()
 
         text1 = self.text[idx]
@@ -50,5 +51,5 @@ class yelpReview(Dataset):
             'input_ids': ids.squeeze(0),
             'attention_mask': mask.squeeze(0),
             'token_type_ids': token_type_ids.squeeze(0),
-            'labels': tensor(self.target[idx], dtype=long)
+            'labels': torch.tensor(self.labels[idx], dtype=torch.long)
             }

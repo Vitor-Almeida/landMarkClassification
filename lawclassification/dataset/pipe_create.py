@@ -16,7 +16,7 @@ def yelp_review(max_data_size, test_split):
     df = pd.read_json(os.path.join(ROOT_DIR,'data','yelp','raw','yelp_academic_dataset_review.json'), lines=True, nrows = max_data_size)
 
     #gamb class:
-    #df = df[(df['stars']==1) | (df['stars']==5)]
+    df = df[(df['stars']==1) | (df['stars']==5) | (df['stars']==3)]
     df = df[df["text"].apply(lambda x: len(x) > 200)] 
 
     dataset = df[['stars','text']]
@@ -58,7 +58,5 @@ def yelp_review(max_data_size, test_split):
     XTest.to_csv(f'{ROOT_DIR}/data/yelp/interm/test/test.csv',index=False)
     XTrain.to_csv(f'{ROOT_DIR}/data/yelp/interm/train/train.csv',index=False)
     Xval.to_csv(f'{ROOT_DIR}/data/yelp/interm/val/val.csv',index=False)
-
-    print(len(XTrain))
 
     return None
