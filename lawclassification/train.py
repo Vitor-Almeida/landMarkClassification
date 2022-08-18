@@ -1,9 +1,9 @@
 from tqdm.auto import tqdm
 import torch
-from dataset.dataset_load import yelpReview
+from dataset.dataset_load import deepData
 from models.deep_models import deep_models
-from torchmetrics import Accuracy,ConfusionMatrix,Precision,F1Score
-from utils.helperfuns import printLog, printParamsTerminal
+from utils.helper_funs import printLog, printParamsTerminal,metrics_config,printEvalResults
+import mlflow
 
 def trainLoop(cur_epoch,model,dataloader,progress_bar):
 
@@ -21,21 +21,21 @@ def trainLoop(cur_epoch,model,dataloader,progress_bar):
 
         ### metricas:
         if idx == 0:
-            output_batch_list = outputs.logits.unsqueeze(2)
-            label_batch_list = batch['labels'].unsqueeze(1)
+            outputBatch = outputs.logits.unsqueeze(2)
+            labelBatch = batch['labels'].unsqueeze(1)
         else:
-            output_batch_list = torch.cat((output_batch_list,outputs.logits.unsqueeze(2)),dim=2)
-            label_batch_list = torch.cat((label_batch_list,batch['labels'].unsqueeze(1)),dim=1)
+            outputBatch = torch.cat((outputBatch,outputs.logits.unsqueeze(2)),dim=2)
+            labelBatch = torch.cat((labelBatch,batch['labels'].unsqueeze(1)),dim=1)
 
-        accuracy_accu_result = round(metrics_config(model)['accuracy_accu'](output_batch_list, label_batch_list).item(),2)
+        acc = round(metrics_config(model)['accuracy_accu'](outputBatch, labelBatch).item(),2)
 
         ###
         
-        printLog(idx,cur_epoch,model,accuracy_accu_result)
+        printLog(idx,cur_epoch,model,acc)
 
         progress_bar.update(1)
 
-    return output_batch_list,label_batch_list
+    return outputBatch,labelBatch
 
 def testLoop(model,dataloader):
 
@@ -49,78 +49,60 @@ def testLoop(model,dataloader):
             ### metricas:
 
             if idx == 0:
-                output_batch_list = outputs.logits.unsqueeze(2)
-                label_batch_list = batch['labels'].unsqueeze(1)
+                outputBatch = outputs.logits.unsqueeze(2)
+                labelBatch = batch['labels'].unsqueeze(1)
             else:
-                output_batch_list = torch.cat((output_batch_list,outputs.logits.unsqueeze(2)),dim=2)
-                label_batch_list = torch.cat((label_batch_list,batch['labels'].unsqueeze(1)),dim=1)
+                outputBatch = torch.cat((outputBatch,outputs.logits.unsqueeze(2)),dim=2)
+                labelBatch = torch.cat((labelBatch,batch['labels'].unsqueeze(1)),dim=1)
 
             ###
 
-    return output_batch_list,label_batch_list
-
-def metrics_config(model):
-
-    accuracy_accu = Accuracy(num_classes=model.num_labels, average='micro', threshold = 0.5, mdmc_average = 'global',top_k=1).to(model.device)
-    conf_matrix = ConfusionMatrix(num_classes=model.num_labels,normalize = None, threshold  = 0.5).to(model.device)
-    precision = Precision(num_classes=model.num_labels, average='micro', threshold  = 0.5, mdmc_average = 'global',top_k=1).to(model.device)
-    f1score = F1Score(num_classes=model.num_labels, average='micro', threshold  = 0.5, mdmc_average = 'global',top_k=1).to(model.device)
-
-    mDict = {'accuracy_accu':accuracy_accu,'conf_matrix':conf_matrix,'precision':precision,'f1score':f1score}
-
-    return mDict
+    return outputBatch,labelBatch
 
 def main():
 
     model_name = 'bert-base-uncased'
-    batchsize = 16
-    max_char_length = 128
-    lr = 5e-5
-    epochs = 3
+    batchsize = 32
+    max_char_length = 512
+    lr = 3e-5
+    epochs = 6
     warmup_size = 0.1
-    dropout = 0.2
+    dropout = 0.1
+    dataname = 'dmoz_510_1500'
     
-    model = deep_models(model_name, batchsize, max_char_length, lr, epochs, warmup_size, yelpReview, dropout)
+    model = deep_models(model_name, batchsize, max_char_length, lr, epochs, warmup_size, deepData, dropout, dataname=dataname)
     progress_bar = tqdm(range(model.total_steps))
 
     printParamsTerminal(model)
 
     for epoch_i in range(0, model.epochs):
 
-        output_batch_train,label_batch_train = trainLoop(epoch_i,model,model.train_dataloader,progress_bar)
+        outBatTrain,labBatTrain = trainLoop(epoch_i,model,model.train_dataloader,progress_bar)
 
-        output_batch_test,label_batch_test = testLoop(model,model.test_dataloader)
-        acc_test = round(metrics_config(model)['accuracy_accu'](output_batch_test, label_batch_test).item(),2)
+        outBatTest,labBatTest = testLoop(model,model.test_dataloader)
+
+        acc_test = round(metrics_config(model)['accuracy_accu'](outBatTest, labBatTest).item(),2)
         printLog(-1,epoch_i,model,acc_test)
 
         ## get all metric data:
 
         if epoch_i == 0:
-            output_batch_list_train = output_batch_train
-            label_batch_list_train = label_batch_train
+            outBatTrain_List = outBatTrain
+            labBatTrain_List = labBatTrain
 
-            output_batch_list_test = output_batch_test
-            label_batch_list_test = label_batch_test
+            outBatTest_List = outBatTest
+            labBatTest_List = labBatTest
         else:
-            output_batch_list_train = torch.cat((output_batch_list_train,output_batch_train),dim=2)
-            label_batch_list_train = torch.cat((label_batch_list_train,label_batch_train),dim=1)
+            outBatTrain_List = torch.cat((outBatTrain_List,outBatTrain),dim=2)
+            labBatTrain_List = torch.cat((labBatTrain_List,labBatTrain),dim=1)
 
-            output_batch_list_test = torch.cat((output_batch_list_test,output_batch_test),dim=2)
-            label_batch_list_test = torch.cat((label_batch_list_test,label_batch_test),dim=1)
+            outBatTest_List = torch.cat((outBatTest_List,outBatTest),dim=2)
+            labBatTest_List = torch.cat((labBatTest_List,labBatTest),dim=1)
 
         ##
 
-    print('-'*59)
-    output_batch_list_eval,label_batch_list_eval=testLoop(model,model.val_dataloader)
-    accu = metrics_config(model)['accuracy_accu'](output_batch_list_eval, label_batch_list_eval)
-    print(f"EVAL Accuracy: {accu}")
-    conf_matrix = metrics_config(model)['conf_matrix'](output_batch_list_eval,label_batch_list_eval)
-    print(f'matriz de confusão: {conf_matrix}')
-    precision=metrics_config(model)['precision'](output_batch_list_eval,label_batch_list_eval)
-    print(f'precision: {precision}')
-    f1score=metrics_config(model)['f1score'](output_batch_list_eval,label_batch_list_eval)
-    print(f'f1score: {f1score}')
-    print('-'*59)
+    outBatEval,labBatEval=testLoop(model,model.val_dataloader)
+    printEvalResults(model,outBatEval,labBatEval)
 
     return None
 

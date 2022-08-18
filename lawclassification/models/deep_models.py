@@ -8,7 +8,7 @@ from utils.definitions import ROOT_DIR
 from transformers import logging
 
 class deep_models():
-    def __init__(self, model_name, batchsize, max_char_length, lr, epochs, warmup_size, class_fun, dropout):
+    def __init__(self, model_name, batchsize, max_char_length, lr, epochs, warmup_size, class_fun, dropout, dataname):
         super(deep_models, self).__init__()
 
         #baixar modelo e deixar offline:
@@ -16,6 +16,7 @@ class deep_models():
 
         logging.set_verbosity_error() #remove annoying transformers warnings.
 
+        self.dataname = dataname
         self.model_name = model_name
         self.model_path = os.path.join(ROOT_DIR,'lawclassification','models','external',self.model_name)
         self.dropout = dropout
@@ -32,9 +33,9 @@ class deep_models():
 
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, do_lower_case=True)
         
-        self.dataset_val = class_fun(typeSplit='val', max_length = self.max_char_length, tokenizer = self.tokenizer)
-        self.dataset_train = class_fun(typeSplit='train', max_length = self.max_char_length, tokenizer = self.tokenizer)
-        self.dataset_test = class_fun(typeSplit='test', max_length = self.max_char_length, tokenizer = self.tokenizer)
+        self.dataset_val = class_fun(typeSplit='val', max_length = self.max_char_length, tokenizer = self.tokenizer, dataname = self.dataname)
+        self.dataset_train = class_fun(typeSplit='train', max_length = self.max_char_length, tokenizer = self.tokenizer, dataname = self.dataname)
+        self.dataset_test = class_fun(typeSplit='test', max_length = self.max_char_length, tokenizer = self.tokenizer, dataname = self.dataname)
 
         self.val_dataloader = DataLoader(dataset=self.dataset_val,batch_size=self.batchsize,drop_last=True)
         self.train_dataloader = DataLoader(dataset=self.dataset_train,batch_size=self.batchsize,shuffle=True,drop_last=True)

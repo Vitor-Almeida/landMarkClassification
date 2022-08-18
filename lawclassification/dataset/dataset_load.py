@@ -7,15 +7,15 @@ from utils.definitions import ROOT_DIR
 
 #pyton -m dataset.landMarkTorchDataset => rodar testes 
 
-class yelpReview(Dataset):
+class deepData(Dataset):
     """
     Load raw data in a pytorch dataset class
     All data will follow the (label,text) format
     """
-    def __init__(self, typeSplit,tokenizer,max_length):
+    def __init__(self, typeSplit,tokenizer,max_length,dataname):
 
-        super(yelpReview, self).__init__()
-        self.name = 'yelp'
+        super(deepData, self).__init__()
+        self.name = dataname
         self.dataframe = pd.read_csv(os.path.join(ROOT_DIR,'data',self.name,'interm',typeSplit,typeSplit+'.csv'))
         self.labels = self.dataframe.iloc[:,0]
         self.text = self.dataframe.iloc[:,1]
