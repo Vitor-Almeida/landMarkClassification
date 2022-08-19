@@ -1,5 +1,6 @@
 import random
 import numpy as np
+from dataset.dataset_load import deep_data
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, get_linear_schedule_with_warmup
 import torch
 from torch.utils.data import DataLoader
@@ -8,7 +9,7 @@ from utils.definitions import ROOT_DIR
 from transformers import logging
 
 class deep_models():
-    def __init__(self, model_name, batchsize, max_char_length, lr, epochs, warmup_size, class_fun, dropout, dataname):
+    def __init__(self, model_name, batchsize, max_char_length, lr, epochs, warmup_size,  dropout, dataname,problem_type):
         super(deep_models, self).__init__()
 
         #baixar modelo e deixar offline:
@@ -20,6 +21,7 @@ class deep_models():
         self.model_name = model_name
         self.model_path = os.path.join(ROOT_DIR,'lawclassification','models','external',self.model_name)
         self.dropout = dropout
+        self.problem_type = problem_type
 
         self.batchsize = batchsize
         self.max_char_length = max_char_length
@@ -33,38 +35,67 @@ class deep_models():
 
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, do_lower_case=True)
         
-        self.dataset_val = class_fun(typeSplit='val', max_length = self.max_char_length, tokenizer = self.tokenizer, dataname = self.dataname)
-        self.dataset_train = class_fun(typeSplit='train', max_length = self.max_char_length, tokenizer = self.tokenizer, dataname = self.dataname)
-        self.dataset_test = class_fun(typeSplit='test', max_length = self.max_char_length, tokenizer = self.tokenizer, dataname = self.dataname)
+        self.dataset_val = deep_data(typeSplit='val', max_length = self.max_char_length, tokenizer = self.tokenizer, dataname = self.dataname,problem_type=self.problem_type)
+        self.dataset_train = deep_data(typeSplit='train', max_length = self.max_char_length, tokenizer = self.tokenizer, dataname = self.dataname,problem_type=self.problem_type)
+        self.dataset_test = deep_data(typeSplit='test', max_length = self.max_char_length, tokenizer = self.tokenizer, dataname = self.dataname,problem_type=self.problem_type)
 
         self.val_dataloader = DataLoader(dataset=self.dataset_val,batch_size=self.batchsize,drop_last=True)
         self.train_dataloader = DataLoader(dataset=self.dataset_train,batch_size=self.batchsize,shuffle=True,drop_last=True)
         self.test_dataloader = DataLoader(dataset=self.dataset_test,batch_size=self.batchsize,drop_last=True)
         
-        self.num_labels = len(np.unique(self.dataset_train.labels))
+        if problem_type == 'single_label_classification':
+            self.num_labels = len(np.unique(self.dataset_train.labels))
+        else:
+            self.num_labels = len(self.dataset_train.labels[0])
+
         self.lr = lr
         self.epochs = epochs
         self.total_steps = len(self.train_dataloader) * epochs
 
-        self.model = AutoModelForSequenceClassification.from_pretrained(self.model_path, num_labels = self.num_labels
-                                                                                    ,output_attentions = False,output_hidden_states = False)
+        #da pra colocar tipo um config.json aqui que da pra mudar as parada de dropout, requires grad:
+        self.model = AutoModelForSequenceClassification.from_pretrained(self.model_path, 
+                                                                        problem_type=self.problem_type,
+                                                                        num_labels = self.num_labels,
+                                                                        id2label = self.dataset_train.id2label,
+                                                                        label2id = self.dataset_train.label2id,
+                                                                        output_attentions = False,
+                                                                        output_hidden_states = False)
 
         ########## AQUI TEM QUE CONGELAR DEPENDENDO DO INPUT #############
         #### checar se os learning rate são de fato diferente por camada
-        #### checar alguns padroes da softmax da ultima layer de classificacao desse bixo
         #### entender oq é decay, 
         #### entender se o learning rate é diferente para cada um, e se eles mudam diferente.
-        for _,param in enumerate(list(self.model.bert.named_parameters())):
-            if param[0].find('encoder.layer.11.') != -1:
-                param[1].requires_grad = True
-            else:
-                param[1].requires_grad = False
+        for _,param in enumerate(list(self.model.named_parameters())):
 
-        self.model.dropout.p = self.dropout
+            #separar 1 pra cada, nao tem muito oq fazer, talvez aqui seja o lugar onde vai setar os learning rate tmb talvez.
+
+            if self.model.base_model_prefix == 'bert' or self.model.base_model_prefix == 'roberta' or self.model.base_model_prefix == 'longformer':
+
+                if param[0].find(f'{self.model.base_model_prefix}.encoder.layer.11.') != -1 or param[0].find('classifier') != -1:
+                    param[1].requires_grad = True #GRADIENT SERÁ CALCULADO
+                else:
+                    param[1].requires_grad = False #NAO SERÁ CALCULADO
+
+            elif self.model.base_model_prefix == 'albert-base-v2':
+
+                if param[0].find(f'albert_layer_groups.0.albert_layers.0') != -1 or param[0].find('classifier') != -1:
+                    param[1].requires_grad = True #GRADIENT SERÁ CALCULADO
+                else:
+                    param[1].requires_grad = False #NAO SERÁ CALCULADO
+
+            elif self.model.base_model_prefix == 'distilbert':
+
+                if param[0].find('distilbert.transformer.layer.5') != -1 or param[0].find('classifier') != -1: #tirar a camada pre_classifier ??
+                    param[1].requires_grad = True #GRADIENT SERÁ CALCULADO
+                else:
+                    param[1].requires_grad = False #NAO SERÁ CALCULADO
+
+        #self.model.dropout.p = self.dropout #aonde fica os dropout?
 
         ##################################################################
 
         self.optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, self.model.parameters()),lr=self.lr) #faz diferenca isso aqui? colocar o optimizer para tudo?
+        #setar um lr diferente para cada layer?
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if torch.cuda.is_available():

@@ -1,4 +1,5 @@
 from torchmetrics import Accuracy,ConfusionMatrix,Precision,F1Score
+import numpy as np
 
 def metrics_config(model):
 
@@ -28,12 +29,18 @@ def printLog(idx,cur_epoch,model,accuracy):
 
 def printParamsTerminal(model):
 
+    dataset_length = len(model.dataset_test.labels) + len(model.dataset_train.labels) + len(model.dataset_val.labels)
+    train_labels = len(np.unique(model.dataset_train.labels))
+    test_labels = len(np.unique(model.dataset_test.labels))
+    val_labels = len(np.unique(model.dataset_val.labels))
+
     print('-'*59)
     print('Parameters:')
     print(f'modelo: {model.model_name} | batchsize: {model.batchsize} | max_tokens = {model.max_char_length} | learning_rate = {model.lr}')
     print(f'epochs = {model.epochs} | warmup_size = {model.warmup_size} | dropout = {model.dropout}')
-    print(f'num_labels = {model.num_labels} | dataset_length = {len(model.dataset_train.labels)} | dataset_name = {model.dataname}')
-    print(f'random_seed = {model.seed_val}')
+    print(f'num_labels = {model.num_labels} | dataset_length = {dataset_length} | dataset_name = {model.dataname}')
+    print(f'random_seed = {model.seed_val} | train_length = {len(model.dataset_train.labels)} | train_labels = {train_labels}')
+    print(f'test_length = {len(model.dataset_test.labels)} | test_labels = {test_labels} | val_length = {len(model.dataset_val.labels)} | test_labels = {val_labels}')
     print('-'*59)
 
     return None

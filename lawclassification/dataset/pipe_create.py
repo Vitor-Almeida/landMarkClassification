@@ -1,5 +1,6 @@
 import pandas as pd
 import os
+import json
 import gc
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -26,8 +27,12 @@ def yelp_review(max_data_size, test_split):
     gc.collect()
 
     dataset = dataset.sample(frac=1) # shuffle data
-    encodedClass = pd.factorize(dataset['stars']) # encode the category target label [1...n]
-    dataset['labels'] = encodedClass[0]
+
+    labelList = np.unique(dataset['stars'].to_numpy()).tolist()
+    id2label = {idx:label for idx, label in enumerate(labelList)}
+    label2id = {label:idx for idx, label in enumerate(labelList)}
+    dataset['labels'] = dataset['stars'].apply(lambda row: label2id[row])
+
     dataset.drop(columns=['stars'],inplace=True)
 
     X_train, X_testval, y_train, y_testval = train_test_split(dataset['text'],dataset['labels'], test_size=test_split, stratify= dataset['labels'])
@@ -56,19 +61,28 @@ def yelp_review(max_data_size, test_split):
     Xval['labels'] = y_val.to_frame()
     Xval['text'] = X_val.to_frame()
     
-    XTest.to_csv(f'{ROOT_DIR}/data/yelp/interm/test/test.csv',index=False)
-    XTrain.to_csv(f'{ROOT_DIR}/data/yelp/interm/train/train.csv',index=False)
-    Xval.to_csv(f'{ROOT_DIR}/data/yelp/interm/val/val.csv',index=False)
+    XTest.to_csv(os.path.join(ROOT_DIR,'data','yelp','interm','test','test.csv'),index=False)
+    XTrain.to_csv(os.path.join(ROOT_DIR,'data','yelp','interm','test','train.csv'),index=False)
+    Xval.to_csv(os.path.join(ROOT_DIR,'data','yelp','interm','test','val.csv'),index=False)
+
+    with open(os.path.join(ROOT_DIR,'data','yelp','interm','id2label.json'),'w') as f:
+        json.dump(id2label,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','yelp','interm','label2id.json'),'w') as f:
+        json.dump(label2id,f)
+        f.close()
 
     return None
 
-def dmoz_cats(max_data_size, test_split):
+def dmoz_cats(test_split):
 
     """
     File source: https://data.mendeley.com/datasets/9mpgz8z257/1
     Load raw data in a pytorch dataset class
     All data will follow the (label,text) format
     """
+
+    #https://data.mendeley.com/datasets/9mpgz8z257/1
 
 
     def build_url_df():
@@ -252,23 +266,25 @@ def dmoz_cats(max_data_size, test_split):
 
     df = merge_df()
     df.reset_index(inplace=True)
-
-    if len(df) > max_data_size:
-        df = df.sample(n=max_data_size)
     
-    df = df[['topic_id','text_contents']]
+    df = df[['topic_names','text_contents']]
     topQtyLabels = 30
-    df2 = df.groupby(['topic_id']).count().sort_values(by=['text_contents'],ascending=False).head(topQtyLabels)
+    df2 = df.groupby(['topic_names']).count().sort_values(by=['text_contents'],ascending=False).head(topQtyLabels)
     topList = list(df2.index)
 
     del df2
     gc.collect()
 
-    df = df[df['topic_id'].isin(topList)]
+    df = df[df['topic_names'].isin(topList)]
 
-    encodedClass = pd.factorize(df['topic_id']) # encode the category target label [1...n]
-    df['labels'] = encodedClass[0]
-    df.drop(columns=['topic_id'],inplace=True)
+    labelList = np.unique(df['topic_names'].to_numpy()).tolist()
+
+    id2label = {idx:label for idx, label in enumerate(labelList)}
+    label2id = {label:idx for idx, label in enumerate(labelList)}
+
+    df['labels'] = df['topic_names'].apply(lambda row: label2id[row])
+
+    df.drop(columns=['topic_names'],inplace=True)
     df.rename(columns={'text_contents':'text'},inplace=True)
 
     df=df.dropna()
@@ -297,4 +313,118 @@ def dmoz_cats(max_data_size, test_split):
     XTrain_4090.to_csv(os.path.join(ROOT_DIR,'data','dmoz_4090','interm','train','train.csv'),index=False)
     Xval_4090.to_csv(os.path.join(ROOT_DIR,'data','dmoz_4090','interm','val','val.csv'),index=False)
 
+    with open(os.path.join(ROOT_DIR,'data','dmoz_510_1500','interm','id2label.json'),'w') as f:
+        json.dump(id2label,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','dmoz_510_1500','interm','label2id.json'),'w') as f:
+        json.dump(label2id,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','dmoz_1500','interm','id2label.json'),'w') as f:
+        json.dump(id2label,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','dmoz_1500','interm','label2id.json'),'w') as f:
+        json.dump(label2id,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','dmoz_4090','interm','id2label.json'),'w') as f:
+        json.dump(id2label,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','dmoz_4090','interm','label2id.json'),'w') as f:
+        json.dump(label2id,f)
+        f.close()
+
+    return None
+
+def echr_build(problem_column):
+
+    #https://archive.org/details/ECHR-ACL2019
+
+    def get_file_list(folderName):
+
+        path = os.path.join(ROOT_DIR,'data','echr','raw')
+
+        path = os.path.join(path,folderName)
+        fileList = []
+        for file in os.listdir(path):
+            if file.endswith(".json"):
+                fileList.append(file)
+
+        return fileList
+
+    path = os.path.join(ROOT_DIR,'data','echr','raw')
+
+    folderNames = ['EN_dev','EN_test','EN_train']#,'EN_dev_Anon','EN_test_Anon','EN_train_Anon']
+
+    dfList = []
+    strList = []
+
+    for name in folderNames:
+        strList = []
+        for file in get_file_list(name):
+
+            with open(os.path.join(path,name,file)) as f:
+                contents = json.load(f)
+                contents['FOLDER'] = name
+                strList.append(contents)
+                f.close()
+
+        dfList.append(strList)
+        
+    dfList = [item for sublist in dfList for item in sublist]
+
+    df = pd.DataFrame(dfList)
+    df['TEXT'] = df['TEXT'].apply(lambda row: ''.join(row))
+
+    df = df.sample(frac=1) #shuffle
+
+    problemList = df[problem_column].to_list()
+    problemList = [item for sublist in problemList for item in sublist]
+    problemList = np.unique(np.array(problemList)).tolist()
+    max_label_num = len(problemList)
+
+    id2label = {idx:label for idx, label in enumerate(problemList)}
+    label2id = {label:idx for idx, label in enumerate(problemList)}
+
+    df = df[[problem_column,'TEXT','FOLDER']]
+
+    #### multi label encoding:
+    def encoding_multi_labels(arr,label2id,max_label_num):
+
+        id2label_arr = [0] * max_label_num
+
+        for n in arr:
+            id2label_arr[label2id[n]]=1
+
+        return id2label_arr
+
+    df['labels'] = df[problem_column].apply(lambda row: encoding_multi_labels(row,label2id,max_label_num))
+
+    ####
+
+    df.drop(columns=[problem_column],inplace=True)
+    df.rename(columns={'TEXT':'text'},inplace=True)
+
+    df = df[['labels','text','FOLDER']]
+
+    df_test = df[df['FOLDER']=='EN_test'].copy()
+    df_train = df[df['FOLDER']=='EN_train'].copy()
+    df_val = df[df['FOLDER']=='EN_dev'].copy()
+
+    del df
+    gc.collect()
+
+    df_test.drop(columns=['FOLDER'],inplace=True)
+    df_train.drop(columns=['FOLDER'],inplace=True)
+    df_val.drop(columns=['FOLDER'],inplace=True)
+
+    df_test.to_csv(os.path.join(ROOT_DIR,'data','echr','interm','test','test.csv'),index=False)
+    df_train.to_csv(os.path.join(ROOT_DIR,'data','echr','interm','train','train.csv'),index=False)
+    df_val.to_csv(os.path.join(ROOT_DIR,'data','echr','interm','val','val.csv'),index=False)
+    
+    with open(os.path.join(ROOT_DIR,'data','echr','interm','id2label.json'),'w') as f:
+        json.dump(id2label,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','echr','interm','label2id.json'),'w') as f:
+        json.dump(label2id,f)
+        f.close()
+     
     return None

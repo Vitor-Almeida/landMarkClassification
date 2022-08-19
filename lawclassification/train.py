@@ -1,6 +1,5 @@
 from tqdm.auto import tqdm
 import torch
-from dataset.dataset_load import deepData
 from models.deep_models import deep_models
 from utils.helper_funs import printLog, printParamsTerminal,metrics_config,printEvalResults
 import mlflow
@@ -13,7 +12,7 @@ def trainLoop(cur_epoch,model,dataloader,progress_bar):
         model.optimizer.zero_grad()
         batch = {k: v.to(model.device) for k, v in batch.items()}
         outputs = model.model(**batch)
-        loss = outputs.loss # como é a camada classifier desse modelo, qual valor definido de 'treshold'?
+        loss = outputs.loss 
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.model.parameters(), 0.1) # exploding gradients ?
         model.optimizer.step()
@@ -62,15 +61,24 @@ def testLoop(model,dataloader):
 def main():
 
     model_name = 'bert-base-uncased'
-    batchsize = 32
-    max_char_length = 512
-    lr = 3e-5
-    epochs = 6
-    warmup_size = 0.1
-    dropout = 0.1
-    dataname = 'dmoz_510_1500'
+    #model_name = 'albert-base-v2'
+    #model_name = 'roberta-base'
+    #model_name = 'nlpaueb.legal-bert-base-uncased'
+    #model_name = 'distilbert-base-uncased'
+    #model_name = 'saibo.legal-roberta-base'
+    #model_name = 'allenai.longformer-base-4096'
     
-    model = deep_models(model_name, batchsize, max_char_length, lr, epochs, warmup_size, deepData, dropout, dataname=dataname)
+    batchsize = 16
+    max_char_length = 128
+    lr = 3e-5
+    epochs = 3
+    warmup_size = 0.1
+    dropout = 0.1 #o dropout fica só no classificador? lugar do dropout fica mudando entre os modelos.
+    dataname = 'dmoz_1500'
+    #problem_type = 'multi_label_classification'
+    problem_type = 'single_label_classification'
+    
+    model = deep_models(model_name, batchsize, max_char_length, lr, epochs, warmup_size, dropout, dataname,problem_type)
     progress_bar = tqdm(range(model.total_steps))
 
     printParamsTerminal(model)
