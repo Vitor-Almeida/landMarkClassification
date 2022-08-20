@@ -23,15 +23,8 @@ class deep_data(Dataset):
             self.dataframe = pd.read_csv(os.path.join(ROOT_DIR,'data',self.name,'interm',typeSplit,typeSplit+'.csv'))
         else:
             self.dataframe = pd.read_csv(os.path.join(ROOT_DIR,'data',self.name,'interm',typeSplit,typeSplit+'.csv'))
-            self.dataframe['labels'] = self.dataframe['labels'].apply(lambda row: json.loads(row))
+            self.dataframe['labels'] = self.dataframe['labels'].apply(lambda row: json.loads(row)) #pra transformar '[A,B,C]' str em list list
 
-            #def gamb_float(row):
-            #    for n in row:
-            #        n = float(n)
-            #    return row
-
-            #self.dataframe['labels'] = self.dataframe['labels'].apply(lambda row: gamb_float(row))
-     
         with open(os.path.join(os.path.join(ROOT_DIR,'data',self.name,'interm','id2label.json'))) as f:
             self.id2label =  json.load(f)
             f.close()
@@ -44,6 +37,11 @@ class deep_data(Dataset):
         self.text = self.dataframe.iloc[:,1]
         self.max_length = max_length
         self.tokenizer = tokenizer
+
+        if problem_type == 'single_label_classification':
+            self.num_labels = len(np.unique(self.labels))
+        else:
+            self.num_labels = len(self.labels[0])
 
     def __len__(self):
         return len(self.dataframe)
@@ -75,6 +73,6 @@ class deep_data(Dataset):
         return {
             'input_ids': ids.squeeze(0),
             'attention_mask': mask.squeeze(0),
-            #'token_type_ids': token_type_ids.squeeze(0), #faz diferenca esse buxo aqui?
+            #'token_type_ids': token_type_ids.squeeze(0), #faz diferenca esse buxo aqui? # tem que entender a parada de dos tokens especiais, separação de senteças
             'labels': torch.tensor(self.labels[idx])#, dtype=torch.long) #faz diferença aqui ??
             }

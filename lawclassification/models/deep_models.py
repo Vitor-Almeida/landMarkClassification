@@ -43,10 +43,15 @@ class deep_models():
         self.train_dataloader = DataLoader(dataset=self.dataset_train,batch_size=self.batchsize,shuffle=True,drop_last=True)
         self.test_dataloader = DataLoader(dataset=self.dataset_test,batch_size=self.batchsize,drop_last=True)
         
+        self.num_labels_train = self.dataset_train.num_labels
+        self.num_labels_test = self.dataset_test.num_labels
+        self.num_labels_val = self.dataset_val.num_labels
+
         if problem_type == 'single_label_classification':
-            self.num_labels = len(np.unique(self.dataset_train.labels))
+            self.num_labels = self.num_labels_train
         else:
-            self.num_labels = len(self.dataset_train.labels[0])
+            self.num_labels = 2
+            #self.num_labels = self.num_labels_train
 
         self.lr = lr
         self.epochs = epochs
@@ -54,15 +59,23 @@ class deep_models():
 
         #da pra colocar tipo um config.json aqui que da pra mudar as parada de dropout, requires grad:
         self.model = AutoModelForSequenceClassification.from_pretrained(self.model_path, 
+                                                                        local_files_only = True, 
+                                                                        #torch_dtype = 
+                                                                        output_scores = True,
                                                                         problem_type=self.problem_type,
-                                                                        num_labels = self.num_labels,
+                                                                        num_labels = self.num_labels_train,
                                                                         id2label = self.dataset_train.id2label,
                                                                         label2id = self.dataset_train.label2id,
                                                                         output_attentions = False,
-                                                                        output_hidden_states = False)
+                                                                        output_hidden_states = False,
+                                                                        ################
+                                                                        classifier_dropout = self.dropout,
+                                                                        hidden_dropout_prob = self.dropout,
+                                                                        attention_probs_dropout_prob = self.dropout) #MUDOU AQUI
 
         ########## AQUI TEM QUE CONGELAR DEPENDENDO DO INPUT #############
         #### checar se os learning rate são de fato diferente por camada
+        ####
         #### entender oq é decay, 
         #### entender se o learning rate é diferente para cada um, e se eles mudam diferente.
         for _,param in enumerate(list(self.model.named_parameters())):

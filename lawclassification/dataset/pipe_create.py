@@ -334,7 +334,7 @@ def dmoz_cats(test_split):
 
     return None
 
-def echr_build(problem_column):
+def echr_build(problem_column,max_classes):
 
     #https://archive.org/details/ECHR-ACL2019
 
@@ -376,9 +376,33 @@ def echr_build(problem_column):
 
     df = df.sample(frac=1) #shuffle
 
+    #teste vazio:
+    #df = df[df[problem_column].apply(lambda row: len(row))>0]
+
+
     problemList = df[problem_column].to_list()
     problemList = [item for sublist in problemList for item in sublist]
-    problemList = np.unique(np.array(problemList)).tolist()
+
+    unique, counts = np.unique(np.array(problemList), return_counts=True)
+
+    arr1inds = counts.argsort()
+    sorted_arr1 = counts[arr1inds[::-1]]
+    sorted_arr2 = unique[arr1inds[::-1]]
+
+    problemList = sorted_arr2[:max_classes]
+
+    #problemList = np.unique(np.array(problemList)).tolist()
+    #['13', '3', '38', '5', 'P4']
+    def remove_extra_articles(row):
+
+        for n in row:
+            if n not in problemList:
+                return 1
+
+    df['help'] = df[problem_column].apply(lambda row: remove_extra_articles(row))
+
+    df = df[df['help']!=1]
+
     max_label_num = len(problemList)
 
     id2label = {idx:label for idx, label in enumerate(problemList)}
@@ -389,10 +413,10 @@ def echr_build(problem_column):
     #### multi label encoding:
     def encoding_multi_labels(arr,label2id,max_label_num):
 
-        id2label_arr = [0] * max_label_num
+        id2label_arr = [0.0] * max_label_num
 
         for n in arr:
-            id2label_arr[label2id[n]]=1
+            id2label_arr[label2id[n]]=1.0
 
         return id2label_arr
 
@@ -427,4 +451,178 @@ def echr_build(problem_column):
         json.dump(label2id,f)
         f.close()
      
+    return None
+
+def eurlex57k(problem_column,max_classes):
+
+    #http://nlp.cs.aueb.gr/software_and_datasets/EURLEX57K/
+
+    def get_file_list(folderName):
+
+        path = os.path.join(ROOT_DIR,'data','echr','raw')
+
+        path = os.path.join(path,folderName)
+        fileList = []
+        for file in os.listdir(path):
+            if file.endswith(".json"):
+                fileList.append(file)
+
+        return fileList
+
+    path = os.path.join(ROOT_DIR,'data','echr','raw')
+
+    folderNames = ['EN_dev','EN_test','EN_train']#,'EN_dev_Anon','EN_test_Anon','EN_train_Anon']
+
+    dfList = []
+    strList = []
+
+    for name in folderNames:
+        strList = []
+        for file in get_file_list(name):
+
+            with open(os.path.join(path,name,file)) as f:
+                contents = json.load(f)
+                contents['FOLDER'] = name
+                strList.append(contents)
+                f.close()
+
+        dfList.append(strList)
+        
+    dfList = [item for sublist in dfList for item in sublist]
+
+    df = pd.DataFrame(dfList)
+    df['TEXT'] = df['TEXT'].apply(lambda row: ''.join(row))
+
+    df = df.sample(frac=1) #shuffle
+
+    #teste vazio:
+    #df = df[df[problem_column].apply(lambda row: len(row))>0]
+
+
+    problemList = df[problem_column].to_list()
+    problemList = [item for sublist in problemList for item in sublist]
+
+    unique, counts = np.unique(np.array(problemList), return_counts=True)
+
+    arr1inds = counts.argsort()
+    sorted_arr1 = counts[arr1inds[::-1]]
+    sorted_arr2 = unique[arr1inds[::-1]]
+
+    problemList = sorted_arr2[:max_classes]
+
+    #problemList = np.unique(np.array(problemList)).tolist()
+    #['13', '3', '38', '5', 'P4']
+    def remove_extra_articles(row):
+
+        for n in row:
+            if n not in problemList:
+                return 1
+
+    df['help'] = df[problem_column].apply(lambda row: remove_extra_articles(row))
+
+    df = df[df['help']!=1]
+
+    max_label_num = len(problemList)
+
+    id2label = {idx:label for idx, label in enumerate(problemList)}
+    label2id = {label:idx for idx, label in enumerate(problemList)}
+
+    df = df[[problem_column,'TEXT','FOLDER']]
+
+    #### multi label encoding:
+    def encoding_multi_labels(arr,label2id,max_label_num):
+
+        id2label_arr = [0.0] * max_label_num
+
+        for n in arr:
+            id2label_arr[label2id[n]]=1.0
+
+        return id2label_arr
+
+    df['labels'] = df[problem_column].apply(lambda row: encoding_multi_labels(row,label2id,max_label_num))
+
+    ####
+
+    df.drop(columns=[problem_column],inplace=True)
+    df.rename(columns={'TEXT':'text'},inplace=True)
+
+    df = df[['labels','text','FOLDER']]
+
+    df_test = df[df['FOLDER']=='EN_test'].copy()
+    df_train = df[df['FOLDER']=='EN_train'].copy()
+    df_val = df[df['FOLDER']=='EN_dev'].copy()
+
+    del df
+    gc.collect()
+
+    df_test.drop(columns=['FOLDER'],inplace=True)
+    df_train.drop(columns=['FOLDER'],inplace=True)
+    df_val.drop(columns=['FOLDER'],inplace=True)
+
+    df_test.to_csv(os.path.join(ROOT_DIR,'data','echr','interm','test','test.csv'),index=False)
+    df_train.to_csv(os.path.join(ROOT_DIR,'data','echr','interm','train','train.csv'),index=False)
+    df_val.to_csv(os.path.join(ROOT_DIR,'data','echr','interm','val','val.csv'),index=False)
+    
+    with open(os.path.join(ROOT_DIR,'data','echr','interm','id2label.json'),'w') as f:
+        json.dump(id2label,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','echr','interm','label2id.json'),'w') as f:
+        json.dump(label2id,f)
+        f.close()
+     
+    return None
+
+def colab_torch_tweets():
+
+    #https://saifmohammad.com/WebDocs/AIT-2018/AIT2018-DATA/SemEval2018-Task1-all-data.zip
+
+    path_val = os.path.join(ROOT_DIR,'data','SemEval2018-Task1-all-data','raw','2018-E-c-En-dev.txt')
+    path_test = os.path.join(ROOT_DIR,'data','SemEval2018-Task1-all-data','raw','2018-E-c-En-test-gold.txt')
+    path_train = os.path.join(ROOT_DIR,'data','SemEval2018-Task1-all-data','raw','2018-E-c-En-train.txt')
+
+
+    def concat_list(row,to_concat):
+
+        newRow = []
+
+        for col in to_concat:
+            if row[col] == 1:
+                newRow.append(1.0)
+            else:
+                newRow.append(0.0)
+
+        return newRow
+
+    def prepare_data(path):
+        
+        df = pd.read_csv(path,sep='\t')
+
+        to_concat = list(set(df.columns) - set(['ID','Tweet'])) #fica na ordem?
+
+        df['labels'] = df.apply(lambda row: concat_list(row,to_concat),axis=1)
+
+        df = df[['labels','Tweet']]
+
+        df.rename(columns={'Tweet':'text'})
+
+        id2label = {idx:label for idx, label in enumerate(to_concat)}
+        label2id = {label:idx for idx, label in enumerate(to_concat)}
+
+        return df,id2label,label2id
+
+    df_val,_,_ = prepare_data(path_val)
+    df_test,_,_ = prepare_data(path_test)
+    df_train,id2label,label2id = prepare_data(path_train)
+
+    df_test.to_csv(os.path.join(ROOT_DIR,'data','SemEval2018-Task1-all-data','interm','test','test.csv'),index=False)
+    df_train.to_csv(os.path.join(ROOT_DIR,'data','SemEval2018-Task1-all-data','interm','train','train.csv'),index=False)
+    df_val.to_csv(os.path.join(ROOT_DIR,'data','SemEval2018-Task1-all-data','interm','val','val.csv'),index=False)
+    
+    with open(os.path.join(ROOT_DIR,'data','SemEval2018-Task1-all-data','interm','id2label.json'),'w') as f:
+        json.dump(id2label,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','SemEval2018-Task1-all-data','interm','label2id.json'),'w') as f:
+        json.dump(label2id,f)
+        f.close()
+
     return None

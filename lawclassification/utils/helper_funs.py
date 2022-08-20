@@ -1,61 +1,61 @@
-from torchmetrics import Accuracy,ConfusionMatrix,Precision,F1Score
-import numpy as np
 
-def metrics_config(model):
+def print_step_log(idx,cur_epoch,model,metricsViews):
 
-    accuracy_accu = Accuracy(num_classes=model.num_labels, average='micro', threshold = 0.5, mdmc_average = 'global',top_k=1).to(model.device)
-    conf_matrix = ConfusionMatrix(num_classes=model.num_labels,normalize = None, threshold  = 0.5).to(model.device)
-    precision = Precision(num_classes=model.num_labels, average='micro', threshold  = 0.5, mdmc_average = 'global',top_k=1).to(model.device)
-    f1score = F1Score(num_classes=model.num_labels, average='micro', threshold  = 0.5, mdmc_average = 'global',top_k=1).to(model.device)
+    logInterval = int(model.total_steps/50)
 
-    mDict = {'accuracy_accu':accuracy_accu,'conf_matrix':conf_matrix,'precision':precision,'f1score':f1score}
+    if idx % logInterval == 0 and idx > 0:
+        qtyToFormat = len(metricsViews)
+        str_to_format = []
 
-    return mDict
+        for pos in range(0,qtyToFormat):
+            string = ['{',str(pos),'}']
+            string = ''.join(string)
+            str_to_format.append(string)
+        str_to_format = '   '.join(str_to_format)
 
-def printLog(idx,cur_epoch,model,accuracy):
+        str_gamb = []
 
-    log_interval = int(model.total_steps/50)
+        for views in metricsViews:
+            string = "'"+str(views)+": "+str(metricsViews[views])+"'"
+            str_gamb.append(string)
+        str_gamb = ','.join(str_gamb)
 
-    if idx == -1:
-        print('| end of epoch {:3d} '
-        '| test accuracy {:8.3f}'.format(cur_epoch+1, accuracy))
+        str_end = str_to_format.format(*eval(str_gamb))
 
-    if idx % log_interval == 0 and idx > 0:
-        print('| epoch {:3d} | {:5d}/{:5d} batches '
-                '| train accuracy {:8.3f}'.format(cur_epoch+1, idx, len(model.train_dataloader),
-                                            accuracy))
+        print(f'| epoch:{cur_epoch+1} | {idx}/{len(model.train_dataloader)} batches | {str_end}')
+    else:
+        return None
 
-    return None
 
 def printParamsTerminal(model):
 
-    dataset_length = len(model.dataset_test.labels) + len(model.dataset_train.labels) + len(model.dataset_val.labels)
-    train_labels = len(np.unique(model.dataset_train.labels))
-    test_labels = len(np.unique(model.dataset_test.labels))
-    val_labels = len(np.unique(model.dataset_val.labels))
+    dataset_length = len(model.dataset_test) + len(model.dataset_train) + len(model.dataset_val)
+    train_labels = model.num_labels_train
+    test_labels = model.num_labels_test
+    val_labels = model.num_labels_val
 
     print('-'*59)
     print('Parameters:')
     print(f'modelo: {model.model_name} | batchsize: {model.batchsize} | max_tokens = {model.max_char_length} | learning_rate = {model.lr}')
     print(f'epochs = {model.epochs} | warmup_size = {model.warmup_size} | dropout = {model.dropout}')
-    print(f'num_labels = {model.num_labels} | dataset_length = {dataset_length} | dataset_name = {model.dataname}')
-    print(f'random_seed = {model.seed_val} | train_length = {len(model.dataset_train.labels)} | train_labels = {train_labels}')
-    print(f'test_length = {len(model.dataset_test.labels)} | test_labels = {test_labels} | val_length = {len(model.dataset_val.labels)} | test_labels = {val_labels}')
+    print(f'num_labels = {train_labels} | dataset_length = {dataset_length} | dataset_name = {model.dataname}')
+    print(f'random_seed = {model.seed_val} | train_length = {len(model.dataset_train)} | train_labels = {train_labels}')
+    print(f'test_length = {len(model.dataset_test)} | test_labels = {test_labels} | val_length = {len(model.dataset_val)} | test_labels = {val_labels}')
     print('-'*59)
 
     return None
 
-def printEvalResults(model,output_batch_list_eval,label_batch_list_eval):
+#def printEvalResults(model,output_batch_list_eval,label_batch_list_eval):
 
-    print('-'*59)
-    accu = metrics_config(model)['accuracy_accu'](output_batch_list_eval, label_batch_list_eval)
-    print(f"EVAL Accuracy: {accu}")
-    conf_matrix = metrics_config(model)['conf_matrix'](output_batch_list_eval,label_batch_list_eval)
-    print(f'matriz de confusão: {conf_matrix}')
-    precision=metrics_config(model)['precision'](output_batch_list_eval,label_batch_list_eval)
-    print(f'precision: {precision}')
-    f1score=metrics_config(model)['f1score'](output_batch_list_eval,label_batch_list_eval)
-    print(f'f1score: {f1score}')
-    print('-'*59)
+    #print('-'*59)
+    #accu = metrics_config(model)['accuracy_accu'](output_batch_list_eval, label_batch_list_eval)
+    #print(f"EVAL Accuracy: {accu}")
+    #conf_matrix = metrics_config(model)['conf_matrix'](output_batch_list_eval,label_batch_list_eval)
+    #print(f'matriz de confusão: {conf_matrix}')
+    #precision=metrics_config(model)['precision'](output_batch_list_eval,label_batch_list_eval)
+    #print(f'precision: {precision}')
+    #f1score=metrics_config(model)['f1score'](output_batch_list_eval,label_batch_list_eval)
+    #print(f'f1score: {f1score}')
+    #print('-'*59)
 
-    return None
+    #return None
