@@ -15,14 +15,20 @@ def execute_metrics_type(metricsDic,pred,label):
 
 def compute_metrics_type(metricsViews,action):
 
+    metrics_result = {}
+
     if action == 'reset':
         for metrics in metricsViews:
-            metrics.reset()
+            metricsViews[metrics].reset()
+            metrics_result.update({metrics:0.0})
+
+        return metrics_result
     else:
         for metrics in metricsViews:
-            metrics.compute()
+            result = metricsViews[metrics].compute()
+            metrics_result.update({metrics:round(result.item(),4)})
 
-    return None
+        return metrics_result
 
 def metrics_config(num_labels,device,problem_type):
 

@@ -1,4 +1,8 @@
 
+from utils.definitions import ROOT_DIR
+import os
+import pandas as pd
+
 def print_step_log(idx,cur_epoch,model,metricsViews):
 
     logInterval = int(model.total_steps/50)
@@ -27,7 +31,38 @@ def print_step_log(idx,cur_epoch,model,metricsViews):
         return None
 
 
-def printParamsTerminal(model):
+def read_experiments():
+
+    path = os.path.join(ROOT_DIR,'lawclassification','run_experiments.csv')
+
+    df = pd.read_csv(path)
+
+    return df.to_dict(orient='records')
+
+def print_batch_log(cur_epoch,model,metricsViews):
+
+    qtyToFormat = len(metricsViews)
+    str_to_format = []
+
+    for pos in range(0,qtyToFormat):
+        string = ['{',str(pos),'}']
+        string = ''.join(string)
+        str_to_format.append(string)
+    str_to_format = '   '.join(str_to_format)
+
+    str_gamb = []
+
+    for views in metricsViews:
+        string = "'"+str(views)+": "+str(metricsViews[views])+"'"
+        str_gamb.append(string)
+    str_gamb = ','.join(str_gamb)
+
+    str_end = str_to_format.format(*eval(str_gamb))
+
+    print(f'|end of epoch:{cur_epoch+1} | {len(model.train_dataloader)}/{len(model.train_dataloader)} batches | {str_end}')
+
+
+def print_params_terminal(model):
 
     dataset_length = len(model.dataset_test) + len(model.dataset_train) + len(model.dataset_val)
     train_labels = model.num_labels_train
@@ -44,18 +79,3 @@ def printParamsTerminal(model):
     print('-'*59)
 
     return None
-
-#def printEvalResults(model,output_batch_list_eval,label_batch_list_eval):
-
-    #print('-'*59)
-    #accu = metrics_config(model)['accuracy_accu'](output_batch_list_eval, label_batch_list_eval)
-    #print(f"EVAL Accuracy: {accu}")
-    #conf_matrix = metrics_config(model)['conf_matrix'](output_batch_list_eval,label_batch_list_eval)
-    #print(f'matriz de confusão: {conf_matrix}')
-    #precision=metrics_config(model)['precision'](output_batch_list_eval,label_batch_list_eval)
-    #print(f'precision: {precision}')
-    #f1score=metrics_config(model)['f1score'](output_batch_list_eval,label_batch_list_eval)
-    #print(f'f1score: {f1score}')
-    #print('-'*59)
-
-    #return None

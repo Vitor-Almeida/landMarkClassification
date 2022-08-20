@@ -69,8 +69,8 @@ class deep_models():
                                                                         output_attentions = False,
                                                                         output_hidden_states = False,
                                                                         ################
-                                                                        classifier_dropout = self.dropout,
-                                                                        hidden_dropout_prob = self.dropout,
+                                                                        classifier_dropout = self.dropout, ###?
+                                                                        hidden_dropout_prob = self.dropout, ###?
                                                                         attention_probs_dropout_prob = self.dropout) #MUDOU AQUI
 
         ########## AQUI TEM QUE CONGELAR DEPENDENDO DO INPUT #############
@@ -107,7 +107,8 @@ class deep_models():
 
         ##################################################################
 
-        self.optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, self.model.parameters()),lr=self.lr) #faz diferenca isso aqui? colocar o optimizer para tudo?
+        self.optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, self.model.parameters()),
+                                           lr=self.lr) #faz diferenca isso aqui? colocar o optimizer para tudo?
         #setar um lr diferente para cada layer?
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
