@@ -1,8 +1,9 @@
 from tqdm.auto import tqdm
 import torch
+import gc
 from models.deep_models import deep_models
 from utils.helper_funs import print_params_terminal,print_step_log,print_batch_log
-from utils.deep_metrics import deep_metrics, execute_metrics_type, compute_metrics_type
+from utils.deep_metrics import deep_metrics, execute_metrics_type, compute_metrics_type, reset_all
 
 class deep_train():
     """
@@ -20,7 +21,8 @@ class deep_train():
                                  experiment['warmup_size'],
                                  experiment['dropout'],
                                  experiment['dataname'],
-                                 experiment['problem_type'])
+                                 experiment['problem_type'],
+                                 experiment['weight_decay'])
         
         self.metrics = deep_metrics(self.model)
         self.progress_bar = tqdm(range(self.model.total_steps))
@@ -58,6 +60,9 @@ class deep_train():
                 batch = {k: v.to(self.model.device) for k, v in batch.items()}
                 outputs = self.model.model(**batch)
 
+                #lexGlue tem q fazer um if self.model.dataname == 'unfair-tos', cat([1] ou [0] no começo do vetor se a label for [0,0,0..0])
+                #problema q talvez vai bugar a definição das métricas
+
                 metricsResults = execute_metrics_type(self.metrics.metricDic['Test'],outputs.logits, batch['labels'].int())
 
         return None
@@ -81,18 +86,30 @@ class deep_train():
 
             self.train_loop(epoch_i)
             trainTmpResult = compute_metrics_type(self.metrics.metricDic['Train']['Batch'],action='compute')
-            print('------------Train results:----------------')
+            print('------------Train results:-------------------------')
             print_batch_log(epoch_i,self.model,trainTmpResult)
             trainTmpResult = compute_metrics_type(self.metrics.metricDic['Train']['Batch'],action='reset')
-
+            print('Starting test loop...')
             self.test_loop()
             testTmpResult = compute_metrics_type(self.metrics.metricDic['Test']['Batch'],action='compute')
-            print('------------Test results:----------------')
+            print('------------Test results:-----------------------')
             print_batch_log(epoch_i,self.model,testTmpResult)
             testTmpResult = compute_metrics_type(self.metrics.metricDic['Test']['Batch'],action='reset')
+
+        self.progress_bar.refresh()
+        self.progress_bar.reset()
 
         self.val_loop()
         valTmpResult = compute_metrics_type(self.metrics.metricDic['Val']['Batch'],action='compute')
         print('------------Validation results:----------------')
         print_batch_log(self.model.epochs-1,self.model,valTmpResult)
         valTmpResult = compute_metrics_type(self.metrics.metricDic['Val']['Batch'],action='reset')
+
+        reset_all(self.metrics.metricDic)
+        torch.cuda.empty_cache()
+        del self.model
+        del self.metrics
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        ### tentar limpar tudo aqui

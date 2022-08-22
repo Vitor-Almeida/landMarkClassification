@@ -1,17 +1,35 @@
 import torchmetrics
+from torch import zeros, long
 
 def execute_metrics_type(metricsDic,pred,label):
 
     metrics_result = {}
     tmp_result = {}
 
+    #arrumar:
+    indexes = zeros(label.size(),dtype=long).to('cuda') #zz aq
+
     for views in metricsDic:
         for metrics in metricsDic[views]:
-            tmp_result.update({metrics : round(metricsDic[views][metrics](pred, label).item(),4)})
+
+            if metrics == 'rP': #information retrival metrics requires indexes
+                tmp_result.update({metrics : round(metricsDic[views][metrics](pred, label, indexes).item(),4)})
+            else:
+                tmp_result.update({metrics : round(metricsDic[views][metrics](pred, label).item(),4)})
         metrics_result.update({views:tmp_result})
         tmp_result = {}
 
     return metrics_result
+
+def reset_all(metricsDic):
+
+    #fix:
+    for views in metricsDic:
+        for metrics in metricsDic[views]:
+            for m in metricsDic[views][metrics]:
+                metricsDic[views][metrics][m].reset()
+
+    return None
 
 def compute_metrics_type(metricsViews,action):
 
@@ -34,64 +52,85 @@ def metrics_config(num_labels,device,problem_type):
 
         if problem_type == 'single_label_classification':
 
-            accuracy = torchmetrics.Accuracy(num_classes=num_labels, 
-                                             average='macro', 
-                                             threshold = 0.5, 
-                                             mdmc_average = 'global',
-                                             multiclass = True, 
-                                             subset_accuracy = False).to(device)
-
-            f1score = torchmetrics.F1Score(num_classes=num_labels, 
-                                           average='macro', 
-                                           threshold = 0.5, 
-                                           mdmc_average = 'global',
-                                           multiclass = True, 
-                                           subset_accuracy = False).to(device)
-
-            precision = torchmetrics.Precision(num_classes=num_labels, 
-                                           average='macro', 
-                                           threshold = 0.5, 
-                                           mdmc_average = 'global',
-                                           multiclass = True, 
-                                           subset_accuracy = False).to(device)
-
-            auroc = torchmetrics.AUROC(num_classes=num_labels, 
-                                           average='macro',
-                                           multiclass = True, 
-                                           subset_accuracy = False).to(device)
-
-        else: 
+            #num_labels aqui vai dar ruim se testar no dataset test e tiver menos label q o dataset train (?)
 
             accuracy = torchmetrics.Accuracy(num_classes=num_labels, 
                                              average='micro', 
                                              threshold = 0.5, 
-                                             mdmc_average = 'samplewise',
-                                             multiclass = True, 
-                                             subset_accuracy = True).to(device)
+                                             subset_accuracy = False).to(device)
 
-            f1score = torchmetrics.F1Score(num_classes=num_labels, 
+            f1score_macro = torchmetrics.F1Score(num_classes=num_labels, 
+                                           average='macro', 
+                                           threshold = 0.5, 
+                                           subset_accuracy = False).to(device)
+
+            f1score_micro = torchmetrics.F1Score(num_classes=num_labels, 
                                            average='micro', 
                                            threshold = 0.5, 
-                                           mdmc_average = 'global',
-                                           multiclass = True, 
-                                           subset_accuracy = True).to(device)
+                                           subset_accuracy = False).to(device)
 
             precision = torchmetrics.Precision(num_classes=num_labels, 
-                                           average='micro', 
-                                           threshold = 0.5, 
-                                           mdmc_average = 'samplewise',
-                                           multiclass = True, 
-                                           subset_accuracy = True).to(device)
+                                               average='micro', 
+                                               threshold = 0.5, 
+                                               subset_accuracy = False).to(device)
+
+            recall = torchmetrics.Recall(num_classes=num_labels, 
+                                               average='micro', 
+                                               threshold = 0.5, 
+                                               subset_accuracy = False).to(device)
 
             auroc = torchmetrics.AUROC(num_classes=num_labels, 
-                                           average='micro',
-                                           multiclass = True, 
-                                           subset_accuracy = True).to(device)
+                                       average='macro',
+                                       subset_accuracy = False).to(device)
 
-        return {'accuracy':accuracy,
-                'f1score':f1score,
-                'precision':precision,
-                'auroc':auroc}
+            return {'accuracy':accuracy,
+                    'f1score_micro':f1score_micro,
+                    'f1score_macro':f1score_macro,
+                    'recall':recall,
+                    'precision':precision,
+                    'auroc':auroc}
+
+        else: 
+
+            #colocar a nDCG@x (x?)
+
+            accuracy = torchmetrics.Accuracy(average='micro', 
+                                             threshold = 0.5, 
+                                             subset_accuracy = True).to(device)
+
+            f1score_micro = torchmetrics.F1Score(average='micro', 
+                                           threshold = 0.5).to(device)
+
+            #testar:
+            f1score_macro = torchmetrics.F1Score(num_classes=num_labels, 
+                                                 average='macro', 
+                                                 threshold = 0.5).to(device)
+
+            #testar:
+            precision = torchmetrics.Precision(average='micro', 
+                                               threshold = 0.5).to(device)
+
+            #testar:
+            recall = torchmetrics.Recall(average='micro', 
+                                         threshold = 0.5).to(device)                          
+
+            #testar:
+            rP = torchmetrics.RetrievalNormalizedDCG()
+
+            #nao bate:
+            auroc = torchmetrics.AUROC(num_classes=num_labels,
+                                       pos_label = 1,
+                                       average='micro',
+                                       subset_accuracy = True).to(device)
+
+            return {'accuracy':accuracy,
+                    'f1score_micro':f1score_micro,
+                    'f1score_macro': f1score_macro,
+                    'precision':precision,
+                    'recall': recall,
+                    'rP':rP}
+
+
 
 class deep_metrics():
     """
@@ -102,7 +141,12 @@ class deep_metrics():
         super(deep_metrics, self).__init__()
 
         dataset_type = ['Train','Test','Val']
-        all_metrics = ['accuracy','f1score','precision','auroc']
+
+        all_metrics_multi = ['accuracy','f1score_micro','f1score_macro','precision','recall','rP']
+        all_metrics_single = ['accuracy','f1score_micro','f1score_macro','recall','precision','auroc']
+
+        all_metrics = all_metrics_multi if model.problem_type == 'multi_label_classification' else all_metrics_single
+
         all_views = ['Batch','Epoch']
         dic_datasets = {}
         dic_metrics = {}
@@ -111,9 +155,9 @@ class deep_metrics():
         for dataset in dataset_type:
             for view in all_views:
                 for metrics in all_metrics:
-                    dic_metrics.update({metrics:metrics_config(model.num_labels,
-                                                          model.device,
-                                                          model.problem_type)[metrics]}
+                    dic_metrics.update({metrics:metrics_config(num_labels = model.num_labels,
+                                                               device = model.device,
+                                                               problem_type = model.problem_type)[metrics]}
                     )
                 dic_views.update({view:dic_metrics})
                 dic_metrics = {}

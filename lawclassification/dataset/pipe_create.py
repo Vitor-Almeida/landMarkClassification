@@ -338,6 +338,8 @@ def echr_build(problem_column,max_classes):
 
     #https://archive.org/details/ECHR-ACL2019
 
+    #a dúvida aqui é se concatenaria todas as colunas 'problemas'
+
     def get_file_list(folderName):
 
         path = os.path.join(ROOT_DIR,'data','echr','raw')
@@ -376,32 +378,37 @@ def echr_build(problem_column,max_classes):
 
     df = df.sample(frac=1) #shuffle
 
-    #teste vazio:
-    #df = df[df[problem_column].apply(lambda row: len(row))>0]
-
-
     problemList = df[problem_column].to_list()
     problemList = [item for sublist in problemList for item in sublist]
 
     unique, counts = np.unique(np.array(problemList), return_counts=True)
 
     arr1inds = counts.argsort()
-    sorted_arr1 = counts[arr1inds[::-1]]
+    #sorted_arr1 = counts[arr1inds[::-1]]
     sorted_arr2 = unique[arr1inds[::-1]]
 
     problemList = sorted_arr2[:max_classes]
 
-    #problemList = np.unique(np.array(problemList)).tolist()
-    #['13', '3', '38', '5', 'P4']
+    def replace_extra_articles(row):
+
+        new_row = []
+
+        for n in row:
+            if n in problemList:
+                new_row.append(n)
+
+        return new_row
+
     def remove_extra_articles(row):
 
         for n in row:
             if n not in problemList:
                 return 1
 
-    df['help'] = df[problem_column].apply(lambda row: remove_extra_articles(row))
+    #df['help'] = df[problem_column].apply(lambda row: remove_extra_articles(row))
+    #df = df[df['help']!=1]
 
-    df = df[df['help']!=1]
+    df[problem_column] = df[problem_column].apply(lambda row: replace_extra_articles(row))
 
     max_label_num = len(problemList)
 
@@ -453,81 +460,59 @@ def echr_build(problem_column,max_classes):
      
     return None
 
-def eurlex57k(problem_column,max_classes):
+def eurlex_lexbench(max_classes):
 
-    #http://nlp.cs.aueb.gr/software_and_datasets/EURLEX57K/
+    #https://zenodo.org/record/5532997/files/eurlex.tar.gz
 
-    def get_file_list(folderName):
+    path = os.path.join(ROOT_DIR,'data','eurlex_lexbench','raw','eurlex.jsonl')
 
-        path = os.path.join(ROOT_DIR,'data','echr','raw')
-
-        path = os.path.join(path,folderName)
-        fileList = []
-        for file in os.listdir(path):
-            if file.endswith(".json"):
-                fileList.append(file)
-
-        return fileList
-
-    path = os.path.join(ROOT_DIR,'data','echr','raw')
-
-    folderNames = ['EN_dev','EN_test','EN_train']#,'EN_dev_Anon','EN_test_Anon','EN_train_Anon']
-
-    dfList = []
-    strList = []
-
-    for name in folderNames:
-        strList = []
-        for file in get_file_list(name):
-
-            with open(os.path.join(path,name,file)) as f:
-                contents = json.load(f)
-                contents['FOLDER'] = name
-                strList.append(contents)
-                f.close()
-
-        dfList.append(strList)
-        
-    dfList = [item for sublist in dfList for item in sublist]
-
-    df = pd.DataFrame(dfList)
-    df['TEXT'] = df['TEXT'].apply(lambda row: ''.join(row))
+    df = pd.read_json(path,lines=True)
 
     df = df.sample(frac=1) #shuffle
 
     #teste vazio:
     #df = df[df[problem_column].apply(lambda row: len(row))>0]
 
-
-    problemList = df[problem_column].to_list()
+    problemList = df['labels'].to_list()
     problemList = [item for sublist in problemList for item in sublist]
+
+    ### tirar as linhas que tem alguma class extra?? ou simplesmente editar e tirar ela de dentro da lista???
 
     unique, counts = np.unique(np.array(problemList), return_counts=True)
 
     arr1inds = counts.argsort()
-    sorted_arr1 = counts[arr1inds[::-1]]
+    #sorted_arr1 = counts[arr1inds[::-1]]
     sorted_arr2 = unique[arr1inds[::-1]]
 
     problemList = sorted_arr2[:max_classes]
 
-    #problemList = np.unique(np.array(problemList)).tolist()
-    #['13', '3', '38', '5', 'P4']
+    #fazer duas versoes:
+
+    def replace_extra_articles(row):
+
+        new_row = []
+
+        for n in row:
+            if n in problemList:
+                new_row.append(n)
+
+        return new_row
+
     def remove_extra_articles(row):
 
         for n in row:
             if n not in problemList:
                 return 1
 
-    df['help'] = df[problem_column].apply(lambda row: remove_extra_articles(row))
+    #df['help'] = df['labels'].apply(lambda row: remove_extra_articles(row))
+    #df = df[df['help']!=1]
 
-    df = df[df['help']!=1]
+    df['labels'] = df['labels'].apply(lambda row: replace_extra_articles(row))
 
     max_label_num = len(problemList)
 
     id2label = {idx:label for idx, label in enumerate(problemList)}
     label2id = {label:idx for idx, label in enumerate(problemList)}
-
-    df = df[[problem_column,'TEXT','FOLDER']]
 
     #### multi label encoding:
     def encoding_multi_labels(arr,label2id,max_label_num):
@@ -539,37 +524,32 @@ def eurlex57k(problem_column,max_classes):
 
         return id2label_arr
 
-    df['labels'] = df[problem_column].apply(lambda row: encoding_multi_labels(row,label2id,max_label_num))
+    df['labels'] = df['labels'].apply(lambda row: encoding_multi_labels(row,label2id,max_label_num))
 
-    ####
+    df = df[['labels','text','data_type']]
 
-    df.drop(columns=[problem_column],inplace=True)
-    df.rename(columns={'TEXT':'text'},inplace=True)
-
-    df = df[['labels','text','FOLDER']]
-
-    df_test = df[df['FOLDER']=='EN_test'].copy()
-    df_train = df[df['FOLDER']=='EN_train'].copy()
-    df_val = df[df['FOLDER']=='EN_dev'].copy()
+    df_test = df[df['data_type']=='test'].copy()
+    df_train = df[df['data_type']=='train'].copy()
+    df_val = df[df['data_type']=='dev'].copy()
 
     del df
     gc.collect()
 
-    df_test.drop(columns=['FOLDER'],inplace=True)
-    df_train.drop(columns=['FOLDER'],inplace=True)
-    df_val.drop(columns=['FOLDER'],inplace=True)
+    df_test.drop(columns=['data_type'],inplace=True)
+    df_train.drop(columns=['data_type'],inplace=True)
+    df_val.drop(columns=['data_type'],inplace=True)
 
-    df_test.to_csv(os.path.join(ROOT_DIR,'data','echr','interm','test','test.csv'),index=False)
-    df_train.to_csv(os.path.join(ROOT_DIR,'data','echr','interm','train','train.csv'),index=False)
-    df_val.to_csv(os.path.join(ROOT_DIR,'data','echr','interm','val','val.csv'),index=False)
+    df_test.to_csv(os.path.join(ROOT_DIR,'data','eurlex_lexbench','interm','test','test.csv'),index=False)
+    df_train.to_csv(os.path.join(ROOT_DIR,'data','eurlex_lexbench','interm','train','train.csv'),index=False)
+    df_val.to_csv(os.path.join(ROOT_DIR,'data','eurlex_lexbench','interm','val','val.csv'),index=False)
     
-    with open(os.path.join(ROOT_DIR,'data','echr','interm','id2label.json'),'w') as f:
+    with open(os.path.join(ROOT_DIR,'data','eurlex_lexbench','interm','id2label.json'),'w') as f:
         json.dump(id2label,f)
         f.close()
-    with open(os.path.join(ROOT_DIR,'data','echr','interm','label2id.json'),'w') as f:
+    with open(os.path.join(ROOT_DIR,'data','eurlex_lexbench','interm','label2id.json'),'w') as f:
         json.dump(label2id,f)
         f.close()
-     
+
     return None
 
 def colab_torch_tweets():
@@ -622,6 +602,382 @@ def colab_torch_tweets():
         json.dump(id2label,f)
         f.close()
     with open(os.path.join(ROOT_DIR,'data','SemEval2018-Task1-all-data','interm','label2id.json'),'w') as f:
+        json.dump(label2id,f)
+        f.close()
+
+    return None
+
+def unfair_tos_lexbench():
+
+    #https://zenodo.org/record/5532997/files/eurlex.tar.gz
+
+    path = os.path.join(ROOT_DIR,'data','unfair_lexbench','raw','unfair_tos.jsonl')
+
+    df = pd.read_json(path,lines=True)
+
+    df = df.sample(frac=1) #shuffle
+
+    #teste vazio:
+    #df = df[df[problem_column].apply(lambda row: len(row))>0]
+
+    problemList = df['labels'].to_list()
+    problemList = [item for sublist in problemList for item in sublist]
+
+    ### tirar as linhas que tem alguma class extra?? ou simplesmente editar e tirar ela de dentro da lista???
+
+    unique, counts = np.unique(np.array(problemList), return_counts=True)
+
+    arr1inds = counts.argsort()
+    #sorted_arr1 = counts[arr1inds[::-1]]
+    sorted_arr2 = unique[arr1inds[::-1]]
+
+    problemList = sorted_arr2[:]
+
+    #fazer duas versoes:
+    def remove_extra_articles(row):
+
+        for n in row:
+            if n not in problemList:
+            #if n in problemList, pop
+                return 1
+
+    df['help'] = df['labels'].apply(lambda row: remove_extra_articles(row))
+
+    df = df[df['help']!=1]
+
+    max_label_num = len(problemList)
+
+    id2label = {idx:label for idx, label in enumerate(problemList)}
+    label2id = {label:idx for idx, label in enumerate(problemList)}
+
+    #### multi label encoding:
+    def encoding_multi_labels(arr,label2id,max_label_num):
+
+        id2label_arr = [0.0] * max_label_num
+
+        for n in arr:
+            id2label_arr[label2id[n]]=1.0
+
+        return id2label_arr
+
+    df['labels'] = df['labels'].apply(lambda row: encoding_multi_labels(row,label2id,max_label_num))
+
+    df = df[['labels','text','data_type']]
+
+    df_test = df[df['data_type']=='test'].copy()
+    df_train = df[df['data_type']=='train'].copy()
+    df_val = df[df['data_type']=='val'].copy()
+
+    del df
+    gc.collect()
+
+    df_test.drop(columns=['data_type'],inplace=True)
+    df_train.drop(columns=['data_type'],inplace=True)
+    df_val.drop(columns=['data_type'],inplace=True)
+
+    df_test.to_csv(os.path.join(ROOT_DIR,'data','unfair_lexbench','interm','test','test.csv'),index=False)
+    df_train.to_csv(os.path.join(ROOT_DIR,'data','unfair_lexbench','interm','train','train.csv'),index=False)
+    df_val.to_csv(os.path.join(ROOT_DIR,'data','unfair_lexbench','interm','val','val.csv'),index=False)
+    
+    with open(os.path.join(ROOT_DIR,'data','unfair_lexbench','interm','id2label.json'),'w') as f:
+        json.dump(id2label,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','unfair_lexbench','interm','label2id.json'),'w') as f:
+        json.dump(label2id,f)
+        f.close()
+
+    return None
+
+def ecthr_a_lexbench():
+
+    #https://zenodo.org/record/5532997/files/ecthr.tar.gz
+
+    path = os.path.join(ROOT_DIR,'data','ecthr_a_lexbench','raw','ecthr.jsonl')
+
+    df = pd.read_json(path,lines=True)
+
+    df = df.sample(frac=1) #shuffle
+
+    problem_column = 'violated_articles'
+
+    #certeza é isso? o artigo nao deixa isso claro.
+    df['text'] = df['facts'].apply(lambda row: ''.join(row))
+    
+    #teste vazio:
+    #df = df[df[problem_column].apply(lambda row: len(row))>0]
+
+    problemList = df[problem_column].to_list()
+    problemList = [item for sublist in problemList for item in sublist]
+
+    unique, counts = np.unique(np.array(problemList), return_counts=True)
+
+    arr1inds = counts.argsort()
+    #sorted_arr1 = counts[arr1inds[::-1]]
+    sorted_arr2 = unique[arr1inds[::-1]]
+
+    problemList = sorted_arr2[:]
+
+    def replace_extra_articles(row):
+
+        new_row = []
+
+        for n in row:
+            if n in problemList:
+                new_row.append(n)
+
+        return new_row
+
+    def remove_extra_articles(row):
+
+        for n in row:
+            if n not in problemList:
+                return 1
+
+    #df['help'] = df['labels'].apply(lambda row: remove_extra_articles(row))
+    #df = df[df['help']!=1]
+
+    df['labels'] = df[problem_column].apply(lambda row: replace_extra_articles(row))
+
+    max_label_num = len(problemList)
+
+    id2label = {idx:label for idx, label in enumerate(problemList)}
+    label2id = {label:idx for idx, label in enumerate(problemList)}
+
+    #### multi label encoding:
+    def encoding_multi_labels(arr,label2id,max_label_num):
+
+        id2label_arr = [0.0] * max_label_num
+
+        for n in arr:
+            id2label_arr[label2id[n]]=1.0
+
+        return id2label_arr
+
+    df['labels'] = df['labels'].apply(lambda row: encoding_multi_labels(row,label2id,max_label_num))
+
+    df = df[['labels','text','data_type']]
+
+    df_test = df[df['data_type']=='test'].copy()
+    df_train = df[df['data_type']=='train'].copy()
+    df_val = df[df['data_type']=='dev'].copy()
+
+    del df
+    gc.collect()
+
+    df_test.drop(columns=['data_type'],inplace=True)
+    df_train.drop(columns=['data_type'],inplace=True)
+    df_val.drop(columns=['data_type'],inplace=True)
+
+    df_test.to_csv(os.path.join(ROOT_DIR,'data','ecthr_a_lexbench','interm','test','test.csv'),index=False)
+    df_train.to_csv(os.path.join(ROOT_DIR,'data','ecthr_a_lexbench','interm','train','train.csv'),index=False)
+    df_val.to_csv(os.path.join(ROOT_DIR,'data','ecthr_a_lexbench','interm','val','val.csv'),index=False)
+    
+    with open(os.path.join(ROOT_DIR,'data','ecthr_a_lexbench','interm','id2label.json'),'w') as f:
+        json.dump(id2label,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','ecthr_a_lexbench','interm','label2id.json'),'w') as f:
+        json.dump(label2id,f)
+        f.close()
+
+    return None
+
+def ecthr_b_lexbench():
+
+    #https://zenodo.org/record/5532997/files/ecthr.tar.gz
+
+    path = os.path.join(ROOT_DIR,'data','ecthr_b_lexbench','raw','ecthr.jsonl')
+
+    df = pd.read_json(path,lines=True)
+
+    df = df.sample(frac=1) #shuffle
+
+    problem_column = 'allegedly_violated_articles'
+
+    #certeza é isso? o artigo nao deixa isso claro.
+    df['text'] = df['facts'].apply(lambda row: ''.join(row))
+    
+    #teste vazio:
+    #df = df[df[problem_column].apply(lambda row: len(row))>0]
+
+    problemList = df[problem_column].to_list()
+    problemList = [item for sublist in problemList for item in sublist]
+
+    unique, counts = np.unique(np.array(problemList), return_counts=True)
+
+    arr1inds = counts.argsort()
+    #sorted_arr1 = counts[arr1inds[::-1]]
+    sorted_arr2 = unique[arr1inds[::-1]]
+
+    problemList = sorted_arr2[:]
+
+    def replace_extra_articles(row):
+
+        new_row = []
+
+        for n in row:
+            if n in problemList:
+                new_row.append(n)
+
+        return new_row
+
+    def remove_extra_articles(row):
+
+        for n in row:
+            if n not in problemList:
+                return 1
+
+    #df['help'] = df['labels'].apply(lambda row: remove_extra_articles(row))
+    #df = df[df['help']!=1]
+
+    df['labels'] = df[problem_column].apply(lambda row: replace_extra_articles(row))
+
+    max_label_num = len(problemList)
+
+    id2label = {idx:label for idx, label in enumerate(problemList)}
+    label2id = {label:idx for idx, label in enumerate(problemList)}
+
+    #### multi label encoding:
+    def encoding_multi_labels(arr,label2id,max_label_num):
+
+        id2label_arr = [0.0] * max_label_num
+
+        for n in arr:
+            id2label_arr[label2id[n]]=1.0
+
+        return id2label_arr
+
+    df['labels'] = df['labels'].apply(lambda row: encoding_multi_labels(row,label2id,max_label_num))
+
+    df = df[['labels','text','data_type']]
+
+    df_test = df[df['data_type']=='test'].copy()
+    df_train = df[df['data_type']=='train'].copy()
+    df_val = df[df['data_type']=='dev'].copy()
+
+    del df
+    gc.collect()
+
+    df_test.drop(columns=['data_type'],inplace=True)
+    df_train.drop(columns=['data_type'],inplace=True)
+    df_val.drop(columns=['data_type'],inplace=True)
+
+    df_test.to_csv(os.path.join(ROOT_DIR,'data','ecthr_b_lexbench','interm','test','test.csv'),index=False)
+    df_train.to_csv(os.path.join(ROOT_DIR,'data','ecthr_b_lexbench','interm','train','train.csv'),index=False)
+    df_val.to_csv(os.path.join(ROOT_DIR,'data','ecthr_b_lexbench','interm','val','val.csv'),index=False)
+    
+    with open(os.path.join(ROOT_DIR,'data','ecthr_b_lexbench','interm','id2label.json'),'w') as f:
+        json.dump(id2label,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','ecthr_b_lexbench','interm','label2id.json'),'w') as f:
+        json.dump(label2id,f)
+        f.close()
+
+    return None
+
+def scotus_lexbench():
+
+    #https://zenodo.org/record/5532997/files/scotus.tar.gz
+
+    path = os.path.join(ROOT_DIR,'data','scotus_lexbench','raw','scotus.jsonl')
+
+    df = pd.read_json(path,lines=True)
+
+    df = df.sample(frac=1) #shuffle
+
+    problem_column = 'issueArea'
+    df = df.astype({problem_column: np.int32})
+
+    problemList = df[problem_column].to_list()
+
+    unique, counts = np.unique(np.array(problemList), return_counts=True)
+
+    arr1inds = counts.argsort()
+    #sorted_arr1 = counts[arr1inds[::-1]]
+    sorted_arr2 = unique[arr1inds[::-1]]
+
+    problemList = sorted_arr2[:]
+
+    max_label_num = len(problemList)
+
+    id2label = {idx:label for idx, label in enumerate(problemList.tolist())}
+    label2id = {label:idx for idx, label in enumerate(problemList.tolist())}
+    df['labels'] = df[problem_column].apply(lambda row: label2id[row])
+
+    df = df[['labels','text','data_type']]
+
+    df_test = df[df['data_type']=='test'].copy()
+    df_train = df[df['data_type']=='train'].copy()
+    df_val = df[df['data_type']=='dev'].copy()
+
+    del df
+    gc.collect()
+
+    df_test.drop(columns=['data_type'],inplace=True)
+    df_train.drop(columns=['data_type'],inplace=True)
+    df_val.drop(columns=['data_type'],inplace=True)
+
+    df_test.to_csv(os.path.join(ROOT_DIR,'data','scotus_lexbench','interm','test','test.csv'),index=False)
+    df_train.to_csv(os.path.join(ROOT_DIR,'data','scotus_lexbench','interm','train','train.csv'),index=False)
+    df_val.to_csv(os.path.join(ROOT_DIR,'data','scotus_lexbench','interm','val','val.csv'),index=False)
+    
+    with open(os.path.join(ROOT_DIR,'data','scotus_lexbench','interm','id2label.json'),'w') as f:
+        json.dump(id2label,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','scotus_lexbench','interm','label2id.json'),'w') as f:
+        json.dump(label2id,f)
+        f.close()
+
+    return None
+
+def ledgar_lexbench():
+
+    #https://zenodo.org/record/5532997/files/ledgar.tar.gz
+
+    path = os.path.join(ROOT_DIR,'data','ledgar_lexbench','raw','ledgar.jsonl')
+
+    df = pd.read_json(path,lines=True)
+
+    df = df.sample(frac=1) #shuffle
+
+    problem_column = 'clause_type'
+
+    problemList = df[problem_column].to_list()
+
+    unique, counts = np.unique(np.array(problemList), return_counts=True)
+
+    arr1inds = counts.argsort()
+    #sorted_arr1 = counts[arr1inds[::-1]]
+    sorted_arr2 = unique[arr1inds[::-1]]
+
+    problemList = sorted_arr2[:]
+
+    max_label_num = len(problemList)
+
+    id2label = {idx:label for idx, label in enumerate(problemList.tolist())}
+    label2id = {label:idx for idx, label in enumerate(problemList.tolist())}
+    df['labels'] = df[problem_column].apply(lambda row: label2id[row])
+
+    df = df[['labels','text','data_type']]
+
+    df_test = df[df['data_type']=='test'].copy()
+    df_train = df[df['data_type']=='train'].copy()
+    df_val = df[df['data_type']=='dev'].copy()
+
+    del df
+    gc.collect()
+
+    df_test.drop(columns=['data_type'],inplace=True)
+    df_train.drop(columns=['data_type'],inplace=True)
+    df_val.drop(columns=['data_type'],inplace=True)
+
+    df_test.to_csv(os.path.join(ROOT_DIR,'data','ledgar_lexbench','interm','test','test.csv'),index=False)
+    df_train.to_csv(os.path.join(ROOT_DIR,'data','ledgar_lexbench','interm','train','train.csv'),index=False)
+    df_val.to_csv(os.path.join(ROOT_DIR,'data','ledgar_lexbench','interm','val','val.csv'),index=False)
+    
+    with open(os.path.join(ROOT_DIR,'data','ledgar_lexbench','interm','id2label.json'),'w') as f:
+        json.dump(id2label,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','ledgar_lexbench','interm','label2id.json'),'w') as f:
         json.dump(label2id,f)
         f.close()
 

@@ -30,10 +30,9 @@ def print_step_log(idx,cur_epoch,model,metricsViews):
     else:
         return None
 
+def read_experiments(fileName):
 
-def read_experiments():
-
-    path = os.path.join(ROOT_DIR,'lawclassification','run_experiments.csv')
+    path = os.path.join(ROOT_DIR,'lawclassification',fileName)
 
     df = pd.read_csv(path)
 
@@ -70,7 +69,7 @@ def print_params_terminal(model):
     val_labels = model.num_labels_val
 
     print('-'*59)
-    print('Parameters:')
+    print(f'Parameters: {model.problem_type}')
     print(f'modelo: {model.model_name} | batchsize: {model.batchsize} | max_tokens = {model.max_char_length} | learning_rate = {model.lr}')
     print(f'epochs = {model.epochs} | warmup_size = {model.warmup_size} | dropout = {model.dropout}')
     print(f'num_labels = {train_labels} | dataset_length = {dataset_length} | dataset_name = {model.dataname}')

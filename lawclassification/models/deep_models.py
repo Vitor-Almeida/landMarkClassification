@@ -9,23 +9,23 @@ from utils.definitions import ROOT_DIR
 from transformers import logging
 
 class deep_models():
-    def __init__(self, model_name, batchsize, max_char_length, lr, epochs, warmup_size,  dropout, dataname,problem_type):
+    def __init__(self, model_name, batchsize, max_char_length, lr, epochs, warmup_size, dropout, dataname, problem_type, weight_decay):
         super(deep_models, self).__init__()
 
-        #baixar modelo e deixar offline:
-        #git clone https://huggingface.co/bert-base-uncased
-
-        logging.set_verbosity_error() #remove annoying transformers warnings.
+        logging.set_verbosity_error() #remove transformers warnings.
 
         self.dataname = dataname
         self.model_name = model_name
         self.model_path = os.path.join(ROOT_DIR,'lawclassification','models','external',self.model_name)
         self.dropout = dropout
         self.problem_type = problem_type
-
         self.batchsize = batchsize
         self.max_char_length = max_char_length
         self.warmup_size = warmup_size
+        self.weight_decay = weight_decay
+        self.lr = lr
+        self.epochs = epochs
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.seed_val = random.randint(0, 1000)
         random.seed(self.seed_val)
@@ -35,26 +35,42 @@ class deep_models():
 
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, do_lower_case=True)
         
-        self.dataset_val = deep_data(typeSplit='val', max_length = self.max_char_length, tokenizer = self.tokenizer, dataname = self.dataname,problem_type=self.problem_type)
-        self.dataset_train = deep_data(typeSplit='train', max_length = self.max_char_length, tokenizer = self.tokenizer, dataname = self.dataname,problem_type=self.problem_type)
-        self.dataset_test = deep_data(typeSplit='test', max_length = self.max_char_length, tokenizer = self.tokenizer, dataname = self.dataname,problem_type=self.problem_type)
+        self.dataset_val = deep_data(typeSplit='val', 
+                                     max_length = self.max_char_length, 
+                                     tokenizer = self.tokenizer, 
+                                     dataname = self.dataname,
+                                     problem_type = self.problem_type)
 
-        self.val_dataloader = DataLoader(dataset=self.dataset_val,batch_size=self.batchsize,drop_last=True)
-        self.train_dataloader = DataLoader(dataset=self.dataset_train,batch_size=self.batchsize,shuffle=True,drop_last=True)
-        self.test_dataloader = DataLoader(dataset=self.dataset_test,batch_size=self.batchsize,drop_last=True)
+        self.dataset_train = deep_data(typeSplit='train', 
+                                       max_length = self.max_char_length, 
+                                       tokenizer = self.tokenizer, 
+                                       dataname = self.dataname,
+                                       problem_type = self.problem_type)
+
+        self.dataset_test = deep_data(typeSplit='test', 
+                                      max_length = self.max_char_length, 
+                                      tokenizer = self.tokenizer, 
+                                      dataname = self.dataname,
+                                      problem_type = self.problem_type)
+
+        self.val_dataloader = DataLoader(dataset = self.dataset_val,
+                                         batch_size = self.batchsize,
+                                         drop_last = True)
+
+        self.train_dataloader = DataLoader(dataset = self.dataset_train,
+                                           batch_size = self.batchsize,
+                                           shuffle = True,drop_last=True)
+
+        self.test_dataloader = DataLoader(dataset = self.dataset_test,
+                                          batch_size = self.batchsize,
+                                          drop_last = True)
         
         self.num_labels_train = self.dataset_train.num_labels
         self.num_labels_test = self.dataset_test.num_labels
         self.num_labels_val = self.dataset_val.num_labels
 
-        if problem_type == 'single_label_classification':
-            self.num_labels = self.num_labels_train
-        else:
-            self.num_labels = 2
-            #self.num_labels = self.num_labels_train
+        self.num_labels = self.num_labels_train
 
-        self.lr = lr
-        self.epochs = epochs
         self.total_steps = len(self.train_dataloader) * epochs
 
         #da pra colocar tipo um config.json aqui que da pra mudar as parada de dropout, requires grad:
@@ -73,6 +89,11 @@ class deep_models():
                                                                         hidden_dropout_prob = self.dropout, ###?
                                                                         attention_probs_dropout_prob = self.dropout) #MUDOU AQUI
 
+        self.model = self.model.cuda() if torch.cuda.is_available() else self.model.cpu()
+
+        self.model.to(self.device)
+
+        ##ARRUMAR :
         ########## AQUI TEM QUE CONGELAR DEPENDENDO DO INPUT #############
         #### checar se os learning rate são de fato diferente por camada
         ####
@@ -107,16 +128,10 @@ class deep_models():
 
         ##################################################################
 
-        self.optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, self.model.parameters()),
-                                           lr=self.lr) #faz diferenca isso aqui? colocar o optimizer para tudo?
-        #setar um lr diferente para cada layer?
-
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        if torch.cuda.is_available():
-            self.model = self.model.cuda()
-
+        self.optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, self.model.parameters()), #faz diferenca isso aqui? colocar o optimizer para tudo?
+                                                  lr=self.lr, #setar um lr diferente para cada layer?
+                                                  weight_decay=self.weight_decay) 
+                
         self.scheduler = get_linear_schedule_with_warmup(self.optimizer, #colocar puro pytorch aqui
-                                    num_warmup_steps = int(self.warmup_size * self.total_steps), 
-                                    num_training_steps = self.total_steps)
-
-        self.model.to(self.device)        
+                                                         num_warmup_steps = int(self.warmup_size * self.total_steps), 
+                                                         num_training_steps = self.total_steps)
