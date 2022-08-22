@@ -7,9 +7,82 @@ from torch.utils.data import DataLoader
 import os
 from utils.definitions import ROOT_DIR
 from transformers import logging
+import re
+
+def set_learning_rates(base_lr,decay_lr,model,weight_decay):
+
+    #https://kozodoi.me/python/deep%20learning/pytorch/tutorial/2022/03/29/discriminative-lr.html
+
+    # horrivel, tentar fazer de uma forma melhor:
+
+    ############ SEMPRE CHECAR AQUI !!! NEM TODOS OS TRANSFORMERS TEM O MESMO PADRAO DE NOME DAS CAMADAS!!! ##########
+
+    layer_names = []
+    for idx, (name, param) in enumerate(model.named_parameters()):
+        if re.search(r'embeddings',name) != None:
+            param.requires_grad = False
+        else:
+            layer_names.append(name)
+
+    layer_names.reverse()
+    parameters = []
+
+    prev_group_name = re.search(r'layer\.[0-9]+\.',layer_names[0])
+    if prev_group_name == None:
+        prev_group_name = layer_names[0].split('.')[-1] # a ideia aqui é pegar todos os pares weight/bias e manter igual
+        pre_layerNum = None
+    else:
+        prev_group_name = prev_group_name.group()
+        pre_layerNum = int(re.search(r'[0-9]',prev_group_name.group()))
+
+    #fix this:
+    if prev_group_name == 'weight':
+        check1 = 'weight'
+        check2 = 'bias'
+    elif prev_group_name == 'bias':
+        check1 = 'bias'
+        check2 = 'weight'
+
+    # store params & learning rates
+    for idx, name in enumerate(layer_names):
+        
+        # parameter group name
+        if re.search(r'layer\.[0-9]+\.',name) == None:
+            cur_group_name = name.split('.')[-1] # a ideia aqui é pegar todos os pares weight/bias e manter igual
+            if (prev_group_name == check1 and cur_group_name == check2) or idx==0:
+                base_lr = base_lr
+            else:
+                base_lr *= decay_lr
+                #base_lr = base_lr - 1 check
+            prev_group_name = cur_group_name
+
+        else:
+            cur_layerNum = int(re.search(r'[0-9]+',(re.search(r'layer\.[0-9]+\.',name)).group() ).group() )
+            if pre_layerNum == None:
+                 pre_layerNum = cur_layerNum
+                 #base_lr = base_lr - 1 check
+                 base_lr *= decay_lr
+
+            if cur_layerNum == pre_layerNum:
+                base_lr = base_lr
+            else:
+                #base_lr = base_lr - 1 check
+                base_lr *= decay_lr
+
+            pre_layerNum = cur_layerNum
+        
+        # display info
+        print(f'{idx}: lr = {base_lr:.6f}, {name}')
+        
+        # append layer parameters
+        parameters += [{'params': [p for n, p in model.named_parameters() if n == name and p.requires_grad],
+                        'lr':     base_lr,
+                        'weight_decay': weight_decay}]
+
+    return parameters
 
 class deep_models():
-    def __init__(self, model_name, batchsize, max_char_length, lr, epochs, warmup_size, dropout, dataname, problem_type, weight_decay):
+    def __init__(self, model_name, batchsize, max_char_length, lr, epochs, warmup_size, dropout, dataname, problem_type, weight_decay, decay_lr):
         super(deep_models, self).__init__()
 
         logging.set_verbosity_error() #remove transformers warnings.
@@ -24,6 +97,7 @@ class deep_models():
         self.warmup_size = warmup_size
         self.weight_decay = weight_decay
         self.lr = lr
+        self.decay_lr = decay_lr
         self.epochs = epochs
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -76,15 +150,15 @@ class deep_models():
         #da pra colocar tipo um config.json aqui que da pra mudar as parada de dropout, requires grad:
         self.model = AutoModelForSequenceClassification.from_pretrained(self.model_path, 
                                                                         local_files_only = True, 
-                                                                        #torch_dtype = 
                                                                         output_scores = True,
-                                                                        problem_type=self.problem_type,
+                                                                        problem_type = self.problem_type,
                                                                         num_labels = self.num_labels_train,
                                                                         id2label = self.dataset_train.id2label,
                                                                         label2id = self.dataset_train.label2id,
                                                                         output_attentions = False,
                                                                         output_hidden_states = False,
                                                                         ################
+                                                                        #torch_dtype = torch.float16, ###realmente precisa?
                                                                         classifier_dropout = self.dropout, ###?
                                                                         hidden_dropout_prob = self.dropout, ###?
                                                                         attention_probs_dropout_prob = self.dropout) #MUDOU AQUI
@@ -95,42 +169,40 @@ class deep_models():
 
         ##ARRUMAR :
         ########## AQUI TEM QUE CONGELAR DEPENDENDO DO INPUT #############
-        #### checar se os learning rate são de fato diferente por camada
-        ####
-        #### entender oq é decay, 
-        #### entender se o learning rate é diferente para cada um, e se eles mudam diferente.
-        for _,param in enumerate(list(self.model.named_parameters())):
 
-            #separar 1 pra cada, nao tem muito oq fazer, talvez aqui seja o lugar onde vai setar os learning rate tmb talvez.
+        # for _,param in enumerate(list(self.model.named_parameters())):
 
-            if self.model.base_model_prefix == 'bert' or self.model.base_model_prefix == 'roberta' or self.model.base_model_prefix == 'longformer':
+        #     #separar 1 pra cada, nao tem muito oq fazer, talvez aqui seja o lugar onde vai setar os learning rate tmb talvez.
 
-                if param[0].find(f'{self.model.base_model_prefix}.encoder.layer.11.') != -1 or param[0].find('classifier') != -1:
-                    param[1].requires_grad = True #GRADIENT SERÁ CALCULADO
-                else:
-                    param[1].requires_grad = False #NAO SERÁ CALCULADO
+        #     if self.model.base_model_prefix == 'bert' or self.model.base_model_prefix == 'roberta' or self.model.base_model_prefix == 'longformer':
 
-            elif self.model.base_model_prefix == 'albert-base-v2':
+        #         if param[0].find(f'{self.model.base_model_prefix}.encoder.layer.11.') != -1 or param[0].find('classifier') != -1:
+        #             param[1].requires_grad = True #GRADIENT SERÁ CALCULADO
+        #         else:
+        #             param[1].requires_grad = False #NAO SERÁ CALCULADO
 
-                if param[0].find(f'albert_layer_groups.0.albert_layers.0') != -1 or param[0].find('classifier') != -1:
-                    param[1].requires_grad = True #GRADIENT SERÁ CALCULADO
-                else:
-                    param[1].requires_grad = False #NAO SERÁ CALCULADO
+        #     elif self.model.base_model_prefix == 'albert-base-v2':
 
-            elif self.model.base_model_prefix == 'distilbert':
+        #         if param[0].find(f'albert_layer_groups.0.albert_layers.0') != -1 or param[0].find('classifier') != -1:
+        #             param[1].requires_grad = True #GRADIENT SERÁ CALCULADO
+        #         else:
+        #             param[1].requires_grad = False #NAO SERÁ CALCULADO
 
-                if param[0].find('distilbert.transformer.layer.5') != -1 or param[0].find('classifier') != -1: #tirar a camada pre_classifier ??
-                    param[1].requires_grad = True #GRADIENT SERÁ CALCULADO
-                else:
-                    param[1].requires_grad = False #NAO SERÁ CALCULADO
+        #     elif self.model.base_model_prefix == 'distilbert':
+
+        #         if param[0].find('distilbert.transformer.layer.5') != -1 or param[0].find('classifier') != -1: #tirar a camada pre_classifier ??
+        #             param[1].requires_grad = True #GRADIENT SERÁ CALCULADO
+        #         else:
+        #             param[1].requires_grad = False #NAO SERÁ CALCULADO
 
         #self.model.dropout.p = self.dropout #aonde fica os dropout?
 
         ##################################################################
 
-        self.optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, self.model.parameters()), #faz diferenca isso aqui? colocar o optimizer para tudo?
-                                                  lr=self.lr, #setar um lr diferente para cada layer?
-                                                  weight_decay=self.weight_decay) 
+        self.optimizer = torch.optim.AdamW(set_learning_rates(self.lr,
+                                                              self.decay_lr,
+                                                              self.model,
+                                                              self.weight_decay)) 
                 
         self.scheduler = get_linear_schedule_with_warmup(self.optimizer, #colocar puro pytorch aqui
                                                          num_warmup_steps = int(self.warmup_size * self.total_steps), 

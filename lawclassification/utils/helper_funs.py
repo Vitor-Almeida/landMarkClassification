@@ -69,10 +69,12 @@ def print_params_terminal(model):
     val_labels = model.num_labels_val
 
     print('-'*59)
-    print(f'Parameters: {model.problem_type}')
+    print(f'Parameters:')
+    print(f'problem_type: {model.problem_type} | dataset_name = {model.dataname}')
     print(f'modelo: {model.model_name} | batchsize: {model.batchsize} | max_tokens = {model.max_char_length} | learning_rate = {model.lr}')
+    print(f'weight_decay: {model.weight_decay} | lr_decay: {model.decay_lr}')
     print(f'epochs = {model.epochs} | warmup_size = {model.warmup_size} | dropout = {model.dropout}')
-    print(f'num_labels = {train_labels} | dataset_length = {dataset_length} | dataset_name = {model.dataname}')
+    print(f'num_labels = {train_labels} | dataset_length = {dataset_length} ')
     print(f'random_seed = {model.seed_val} | train_length = {len(model.dataset_train)} | train_labels = {train_labels}')
     print(f'test_length = {len(model.dataset_test)} | test_labels = {test_labels} | val_length = {len(model.dataset_val)} | test_labels = {val_labels}')
     print('-'*59)

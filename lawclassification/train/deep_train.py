@@ -22,7 +22,8 @@ class deep_train():
                                  experiment['dropout'],
                                  experiment['dataname'],
                                  experiment['problem_type'],
-                                 experiment['weight_decay'])
+                                 experiment['weight_decay'],
+                                 experiment['decay_lr'])
         
         self.metrics = deep_metrics(self.model)
         self.progress_bar = tqdm(range(self.model.total_steps))
@@ -96,8 +97,8 @@ class deep_train():
             print_batch_log(epoch_i,self.model,testTmpResult)
             testTmpResult = compute_metrics_type(self.metrics.metricDic['Test']['Batch'],action='reset')
 
-        self.progress_bar.refresh()
-        self.progress_bar.reset()
+        
+        
 
         self.val_loop()
         valTmpResult = compute_metrics_type(self.metrics.metricDic['Val']['Batch'],action='compute')
@@ -105,6 +106,8 @@ class deep_train():
         print_batch_log(self.model.epochs-1,self.model,valTmpResult)
         valTmpResult = compute_metrics_type(self.metrics.metricDic['Val']['Batch'],action='reset')
 
+        #self.progress_bar.refresh()
+        self.progress_bar.reset()
         reset_all(self.metrics.metricDic)
         torch.cuda.empty_cache()
         del self.model

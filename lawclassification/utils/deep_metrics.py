@@ -119,17 +119,15 @@ def metrics_config(num_labels,device,problem_type):
 
             #nao bate:
             auroc = torchmetrics.AUROC(num_classes=num_labels,
-                                       pos_label = 1,
-                                       average='micro',
-                                       subset_accuracy = True).to(device)
+                                       average='micro').to(device)
 
             return {'accuracy':accuracy,
                     'f1score_micro':f1score_micro,
                     'f1score_macro': f1score_macro,
                     'precision':precision,
                     'recall': recall,
-                    'rP':rP}
-
+                    'rP':rP,
+                    'auroc':auroc}
 
 
 class deep_metrics():
@@ -142,7 +140,7 @@ class deep_metrics():
 
         dataset_type = ['Train','Test','Val']
 
-        all_metrics_multi = ['accuracy','f1score_micro','f1score_macro','precision','recall','rP']
+        all_metrics_multi = ['accuracy','f1score_micro','f1score_macro','precision','recall','rP','auroc']
         all_metrics_single = ['accuracy','f1score_micro','f1score_macro','recall','precision','auroc']
 
         all_metrics = all_metrics_multi if model.problem_type == 'multi_label_classification' else all_metrics_single
