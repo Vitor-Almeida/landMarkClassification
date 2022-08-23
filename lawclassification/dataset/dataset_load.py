@@ -74,5 +74,5 @@ class deep_data(Dataset):
             'input_ids': ids.squeeze(0),
             'attention_mask': mask.squeeze(0),
             #'token_type_ids': token_type_ids.squeeze(0), #faz diferenca esse buxo aqui? # tem que entender a parada de dos tokens especiais, separação de senteças
-            'labels': torch.tensor(self.labels[idx])#, dtype=torch.long) #faz diferença aqui ??
+            'labels': torch.tensor(self.labels[idx])
             }

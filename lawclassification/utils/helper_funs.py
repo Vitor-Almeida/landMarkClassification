@@ -20,7 +20,7 @@ def print_step_log(idx,cur_epoch,model,metricsViews):
         str_gamb = []
 
         for views in metricsViews:
-            string = "'"+str(views)+": "+str(metricsViews[views])+"'"
+            string = "'"+str(views)+": "+str(round(metricsViews[views].item(),4))+"'"
             str_gamb.append(string)
         str_gamb = ','.join(str_gamb)
 
@@ -52,7 +52,7 @@ def print_batch_log(cur_epoch,model,metricsViews):
     str_gamb = []
 
     for views in metricsViews:
-        string = "'"+str(views)+": "+str(metricsViews[views])+"'"
+        string = "'"+str(views)+": "+str(round(metricsViews[views].item(),4))+"'"
         str_gamb.append(string)
     str_gamb = ','.join(str_gamb)
 

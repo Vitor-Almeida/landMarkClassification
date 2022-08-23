@@ -32,6 +32,8 @@ import gc
 
 def main():
 
+    
+
     experimentsDic = read_experiments('run_experiments.csv')
 
     for idx,experiment in enumerate(experimentsDic):
@@ -42,9 +44,6 @@ def main():
 
         del train
         gc.collect()
-
-        #como fica a memoria? zzz
-        #ver oq eh K.clear_session()?
 
     return None
 

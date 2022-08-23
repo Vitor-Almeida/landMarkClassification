@@ -19,7 +19,7 @@ def set_learning_rates(base_lr,decay_lr,model,weight_decay):
 
     layer_names = []
     for idx, (name, param) in enumerate(model.named_parameters()):
-        if re.search(r'embeddings',name) != None:
+        if re.search(r'embeddings',name) != None: ###testar travando 100% mais camadas, pra deixar mais rapido
             param.requires_grad = False
         else:
             layer_names.append(name)
@@ -133,7 +133,8 @@ class deep_models():
 
         self.train_dataloader = DataLoader(dataset = self.dataset_train,
                                            batch_size = self.batchsize,
-                                           shuffle = True,drop_last=True)
+                                           shuffle = True,
+                                           drop_last=True)
 
         self.test_dataloader = DataLoader(dataset = self.dataset_test,
                                           batch_size = self.batchsize,
@@ -158,7 +159,7 @@ class deep_models():
                                                                         output_attentions = False,
                                                                         output_hidden_states = False,
                                                                         ################
-                                                                        #torch_dtype = torch.float16, ###realmente precisa?
+                                                                        #torch_dtype = torch.float16, #fica tudo 16 bytes, o que nao é bom?
                                                                         classifier_dropout = self.dropout, ###?
                                                                         hidden_dropout_prob = self.dropout, ###?
                                                                         attention_probs_dropout_prob = self.dropout) #MUDOU AQUI
@@ -204,6 +205,12 @@ class deep_models():
                                                               self.model,
                                                               self.weight_decay)) 
                 
-        self.scheduler = get_linear_schedule_with_warmup(self.optimizer, #colocar puro pytorch aqui
-                                                         num_warmup_steps = int(self.warmup_size * self.total_steps), 
-                                                         num_training_steps = self.total_steps)
+        #Slanted Triangular Learning Rates
+        def lr_lambda(current_step, num_warmup_steps=int(self.warmup_size * self.total_steps),num_training_steps = self.total_steps):
+            if current_step < num_warmup_steps:
+                return float(current_step) / float(max(1, num_warmup_steps))
+            return max(
+                0.0, float(num_training_steps - current_step) / float(max(1, num_training_steps - num_warmup_steps))
+        )
+
+        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer,lr_lambda,last_epoch=-1)

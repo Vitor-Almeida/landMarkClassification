@@ -12,10 +12,12 @@ def execute_metrics_type(metricsDic,pred,label):
     for views in metricsDic:
         for metrics in metricsDic[views]:
 
-            if metrics == 'rP': #information retrival metrics requires indexes
-                tmp_result.update({metrics : round(metricsDic[views][metrics](pred, label, indexes).item(),4)})
+            if metrics == 'nDCG': #information retrival metrics requires indexes
+                #tmp_result.update({metrics : round(metricsDic[views][metrics](pred, label, indexes).item(),4)})
+                tmp_result.update({metrics : metricsDic[views][metrics](pred, label, indexes)})
             else:
-                tmp_result.update({metrics : round(metricsDic[views][metrics](pred, label).item(),4)})
+                #tmp_result.update({metrics : round(metricsDic[views][metrics](pred, label).item(),4)})
+                tmp_result.update({metrics : metricsDic[views][metrics](pred, label)})
         metrics_result.update({views:tmp_result})
         tmp_result = {}
 
@@ -44,7 +46,8 @@ def compute_metrics_type(metricsViews,action):
     else:
         for metrics in metricsViews:
             result = metricsViews[metrics].compute()
-            metrics_result.update({metrics:round(result.item(),4)})
+            metrics_result.update({metrics:result})
+            #metrics_result.update({metrics:round(result.item(),4)})
 
         return metrics_result
 
@@ -92,8 +95,6 @@ def metrics_config(num_labels,device,problem_type):
 
         else: 
 
-            #colocar a nDCG@x (x?)
-
             accuracy = torchmetrics.Accuracy(average='micro', 
                                              threshold = 0.5, 
                                              subset_accuracy = True).to(device)
@@ -115,19 +116,25 @@ def metrics_config(num_labels,device,problem_type):
                                          threshold = 0.5).to(device)                          
 
             #testar:
-            rP = torchmetrics.RetrievalNormalizedDCG()
+            nDCG = torchmetrics.RetrievalNormalizedDCG()
 
             #nao bate:
-            auroc = torchmetrics.AUROC(num_classes=num_labels,
+            auroc_micro = torchmetrics.AUROC(num_classes=num_labels,
                                        average='micro').to(device)
+
+            #testar
+            auroc_macro = torchmetrics.AUROC(num_classes=num_labels,
+                                       average='macro').to(device)
+
 
             return {'accuracy':accuracy,
                     'f1score_micro':f1score_micro,
                     'f1score_macro': f1score_macro,
                     'precision':precision,
                     'recall': recall,
-                    'rP':rP,
-                    'auroc':auroc}
+                    'nDCG':nDCG,
+                    'auroc_micro':auroc_micro,
+                    'auroc_macro':auroc_macro}
 
 
 class deep_metrics():
@@ -140,7 +147,7 @@ class deep_metrics():
 
         dataset_type = ['Train','Test','Val']
 
-        all_metrics_multi = ['accuracy','f1score_micro','f1score_macro','precision','recall','rP','auroc']
+        all_metrics_multi = ['accuracy','f1score_micro','f1score_macro','precision','recall','nDCG','auroc_micro','auroc_macro']
         all_metrics_single = ['accuracy','f1score_micro','f1score_macro','recall','precision','auroc']
 
         all_metrics = all_metrics_multi if model.problem_type == 'multi_label_classification' else all_metrics_single
