@@ -14,6 +14,7 @@ def set_learning_rates(base_lr,decay_lr,model,weight_decay):
     #https://kozodoi.me/python/deep%20learning/pytorch/tutorial/2022/03/29/discriminative-lr.html
 
     # horrivel, tentar fazer de uma forma melhor:
+    # setar logica para destravar somente X layers
 
     ############ SEMPRE CHECAR AQUI !!! NEM TODOS OS TRANSFORMERS TEM O MESMO PADRAO DE NOME DAS CAMADAS!!! ##########
 
@@ -206,7 +207,10 @@ class deep_models():
                                                               self.weight_decay)) 
                 
         #Slanted Triangular Learning Rates
-        def lr_lambda(current_step, num_warmup_steps=int(self.warmup_size * self.total_steps),num_training_steps = self.total_steps):
+        def lr_lambda(current_step, 
+                      num_warmup_steps=int(self.warmup_size * self.total_steps),
+                      num_training_steps = self.total_steps):
+
             if current_step < num_warmup_steps:
                 return float(current_step) / float(max(1, num_warmup_steps))
             return max(

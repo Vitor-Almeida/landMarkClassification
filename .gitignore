@@ -6,6 +6,8 @@
 *.csv
 *.env
 *.props
+mlruns/
+mlflow.db
 data/
 external/
 ############

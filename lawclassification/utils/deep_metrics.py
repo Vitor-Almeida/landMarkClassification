@@ -86,12 +86,12 @@ def metrics_config(num_labels,device,problem_type):
                                        average='macro',
                                        subset_accuracy = False).to(device)
 
-            return {'accuracy':accuracy,
-                    'f1score_micro':f1score_micro,
-                    'f1score_macro':f1score_macro,
-                    'recall':recall,
-                    'precision':precision,
-                    'auroc':auroc}
+            return torchmetrics.MetricCollection({'accuracy':accuracy,
+                                                  'f1score_micro':f1score_micro,
+                                                  'f1score_macro':f1score_macro,
+                                                  'recall':recall,
+                                                  'precision':precision,
+                                                  'auroc':auroc})
 
         else: 
 
@@ -127,46 +127,11 @@ def metrics_config(num_labels,device,problem_type):
                                        average='macro').to(device)
 
 
-            return {'accuracy':accuracy,
-                    'f1score_micro':f1score_micro,
-                    'f1score_macro': f1score_macro,
-                    'precision':precision,
-                    'recall': recall,
-                    'nDCG':nDCG,
-                    'auroc_micro':auroc_micro,
-                    'auroc_macro':auroc_macro}
-
-
-class deep_metrics():
-    """
-    Persistent metrics of pytorchmetrics
-    """
-    def __init__(self,model):
-
-        super(deep_metrics, self).__init__()
-
-        dataset_type = ['Train','Test','Val']
-
-        all_metrics_multi = ['accuracy','f1score_micro','f1score_macro','precision','recall','nDCG','auroc_micro','auroc_macro']
-        all_metrics_single = ['accuracy','f1score_micro','f1score_macro','recall','precision','auroc']
-
-        all_metrics = all_metrics_multi if model.problem_type == 'multi_label_classification' else all_metrics_single
-
-        all_views = ['Batch','Epoch']
-        dic_datasets = {}
-        dic_metrics = {}
-        dic_views = {}
-
-        for dataset in dataset_type:
-            for view in all_views:
-                for metrics in all_metrics:
-                    dic_metrics.update({metrics:metrics_config(num_labels = model.num_labels,
-                                                               device = model.device,
-                                                               problem_type = model.problem_type)[metrics]}
-                    )
-                dic_views.update({view:dic_metrics})
-                dic_metrics = {}
-            dic_datasets.update({dataset:dic_views})
-            dic_views = {}
-
-        self.metricDic = dic_datasets
+            return torchmetrics.MetricCollection({'accuracy':accuracy,
+                                                  'f1score_micro':f1score_micro,
+                                                  'f1score_macro': f1score_macro,
+                                                  'precision':precision,
+                                                  'recall': recall,
+                                                  #'nDCG':nDCG,
+                                                  'auroc_micro':auroc_micro,
+                                                  'auroc_macro':auroc_macro})
