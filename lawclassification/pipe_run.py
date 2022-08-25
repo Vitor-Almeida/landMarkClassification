@@ -5,13 +5,13 @@ def main():
     #pipe.dmoz_cats(test_split=0.2)
     #pipe.echr_build(problem_column='VIOLATED_ARTICLES',max_classes = 10)
     #pipe.colab_torch_tweets()
-    pipe.eurlex_lexbench(max_classes=100)
-    pipe.unfair_tos_lexbench()
-    pipe.ecthr_a_lexbench()
-    pipe.ecthr_b_lexbench()
-    pipe.scotus_lexbench()
-    pipe.ledgar_lexbench()
+    #pipe.eurlex_lexbench(max_classes=100)
+    #pipe.unfair_tos_lexbench()
+    #pipe.ecthr_a_lexbench()
+    #pipe.ecthr_b_lexbench()
+    #pipe.scotus_lexbench()
+    #pipe.ledgar_lexbench()
+    pipe.fix_scrape_landmarks(max_classes=8,test_split=0.2)
     
-
 if __name__ == '__main__':
     main()

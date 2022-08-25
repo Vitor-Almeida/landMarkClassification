@@ -1,7 +1,7 @@
 import random
 import numpy as np
 from dataset.dataset_load import deep_data
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, get_linear_schedule_with_warmup
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import torch
 from torch.utils.data import DataLoader
 import os
@@ -9,26 +9,44 @@ from utils.definitions import ROOT_DIR
 from transformers import logging
 import re
 
-def set_learning_rates(base_lr,decay_lr,model,weight_decay):
+def set_learning_rates(base_lr,decay_lr,model,weight_decay,qtyFracLayers):
 
     #https://kozodoi.me/python/deep%20learning/pytorch/tutorial/2022/03/29/discriminative-lr.html
 
     # horrivel, tentar fazer de uma forma melhor:
-    # setar logica para destravar somente X layers
+
+    for param in model.parameters():
+        param.requires_grad = False #começar com tudo congelado.
 
     ############ SEMPRE CHECAR AQUI !!! NEM TODOS OS TRANSFORMERS TEM O MESMO PADRAO DE NOME DAS CAMADAS!!! ##########
 
+    allLayers = [name[0] for name in model.named_parameters()]
+    allLayersStr=' '.join(allLayers)
+    tt_layers = len(np.unique(re.findall(r'layers?\.[0-9]+\.',allLayersStr)))
+    tt_layers=0 if tt_layers==1 else tt_layers
+
+    totalLayersToUnfreeze = int(qtyFracLayers*tt_layers)
+
     layer_names = []
     for idx, (name, param) in enumerate(model.named_parameters()):
-        if re.search(r'embeddings',name) != None: ###testar travando 100% mais camadas, pra deixar mais rapido
-            param.requires_grad = False
+
+        curLayerNum = re.search(r'layers?\.[0-9]+\.',name)
+
+        if curLayerNum != None:
+            curLayerNum = int(re.search(r'[0-9]+',curLayerNum.group() ).group() )
+            if tt_layers - curLayerNum <= totalLayersToUnfreeze:
+                param.requires_grad = True #descongelar
+                layer_names.append(name) 
+        elif re.search(r'embeddings',name) != None:
+            pass
         else:
-            layer_names.append(name)
+            param.requires_grad = True #descongelar
+            layer_names.append(name) #o pooler fica com um LR alto, ta certo?
 
     layer_names.reverse()
     parameters = []
 
-    prev_group_name = re.search(r'layer\.[0-9]+\.',layer_names[0])
+    prev_group_name = re.search(r'layers?\.[0-9]+\.',layer_names[0])
     if prev_group_name == None:
         prev_group_name = layer_names[0].split('.')[-1] # a ideia aqui é pegar todos os pares weight/bias e manter igual
         pre_layerNum = None
@@ -48,9 +66,9 @@ def set_learning_rates(base_lr,decay_lr,model,weight_decay):
     for idx, name in enumerate(layer_names):
         
         # parameter group name
-        if re.search(r'layer\.[0-9]+\.',name) == None:
+        if re.search(r'layers?\.[0-9]+\.',name) == None:
             cur_group_name = name.split('.')[-1] # a ideia aqui é pegar todos os pares weight/bias e manter igual
-            if (prev_group_name == check1 and cur_group_name == check2) or idx==0:
+            if (prev_group_name == check1 and cur_group_name == check2) or idx==0 or re.search(r'classifier',name) != None:
                 base_lr = base_lr
             else:
                 base_lr *= decay_lr
@@ -58,7 +76,7 @@ def set_learning_rates(base_lr,decay_lr,model,weight_decay):
             prev_group_name = cur_group_name
 
         else:
-            cur_layerNum = int(re.search(r'[0-9]+',(re.search(r'layer\.[0-9]+\.',name)).group() ).group() )
+            cur_layerNum = int(re.search(r'[0-9]+',(re.search(r'layers?\.[0-9]+\.',name)).group() ).group() )
             if pre_layerNum == None:
                  pre_layerNum = cur_layerNum
                  #base_lr = base_lr - 1 check
@@ -83,7 +101,7 @@ def set_learning_rates(base_lr,decay_lr,model,weight_decay):
     return parameters
 
 class deep_models():
-    def __init__(self, model_name, batchsize, max_char_length, lr, epochs, warmup_size, dropout, dataname, problem_type, weight_decay, decay_lr):
+    def __init__(self, model_name, batchsize, max_char_length, lr, epochs, warmup_size, dropout, dataname, problem_type, weight_decay, decay_lr, qty_layer_unfreeze):
         super(deep_models, self).__init__()
 
         logging.set_verbosity_error() #remove transformers warnings.
@@ -97,6 +115,7 @@ class deep_models():
         self.max_char_length = max_char_length
         self.warmup_size = warmup_size
         self.weight_decay = weight_decay
+        self.qtyFracLayers = qty_layer_unfreeze
         self.lr = lr
         self.decay_lr = decay_lr
         self.epochs = epochs
@@ -161,9 +180,10 @@ class deep_models():
                                                                         output_hidden_states = False,
                                                                         ################
                                                                         #torch_dtype = torch.float16, #fica tudo 16 bytes, o que nao é bom?
-                                                                        classifier_dropout = self.dropout, ###?
-                                                                        hidden_dropout_prob = self.dropout, ###?
-                                                                        attention_probs_dropout_prob = self.dropout) #MUDOU AQUI
+                                                                        #classifier_dropout = self.dropout, ###?
+                                                                        #hidden_dropout_prob = self.dropout, ###?
+                                                                        #attention_probs_dropout_prob = self.dropout
+                                                                        )
 
         self.model = self.model.cuda() if torch.cuda.is_available() else self.model.cpu()
 
@@ -204,7 +224,8 @@ class deep_models():
         self.optimizer = torch.optim.AdamW(set_learning_rates(self.lr,
                                                               self.decay_lr,
                                                               self.model,
-                                                              self.weight_decay)) 
+                                                              self.weight_decay,
+                                                              self.qtyFracLayers)) 
                 
         #Slanted Triangular Learning Rates
         def lr_lambda(current_step, 

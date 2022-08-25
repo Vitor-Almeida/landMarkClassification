@@ -15,16 +15,17 @@ class deep_train():
         super(deep_train, self).__init__()
         
         self.model = deep_models(experiment['model_name'], 
-                                 experiment['batchsize'],
-                                 experiment['max_char_length'],
+                                 int(experiment['batchsize']),
+                                 int(experiment['max_char_length']),
                                  experiment['lr'],
-                                 experiment['epochs'],
+                                 int(experiment['epochs']),
                                  experiment['warmup_size'],
                                  experiment['dropout'],
                                  experiment['dataname'],
                                  experiment['problem_type'],
                                  experiment['weight_decay'],
-                                 experiment['decay_lr'])
+                                 experiment['decay_lr'],
+                                 experiment['qty_layer_unfreeze'])
         
         self.log_every_n_steps = 50
         self.logInterval = int(self.model.total_steps/self.log_every_n_steps)
@@ -86,7 +87,8 @@ class deep_train():
 
             if idx % self.logInterval == 0 and idx > 0:
                 metric = self.metricsTrainBatch.compute()
-                mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()})
+                mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()}
+                )
                 metric = self.metricsTrainBatch.reset()
 
             self.progress_bar.update(1)
@@ -107,13 +109,7 @@ class deep_train():
                 #lexGlue tem q fazer um if self.model.dataname == 'unfair-tos', cat([1] ou [0] no começo do vetor se a label for [0,0,0..0])
                 #problema q talvez vai bugar a definição das métricas
 
-                #self.metricsTestBatch(outputs.logits, batch['labels'].int())
                 self.metricsTestEpoch(outputs.logits, batch['labels'].int())
-
-                #if idx % self.logInterval == 0 and idx > 0:
-                    #metric = self.metricsTestBatch.compute()
-                    #mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()})
-                    #metric = self.metricsTestBatch.reset()
 
         return None
 
@@ -131,11 +127,6 @@ class deep_train():
                 #self.metricsValBatch(outputs.logits, batch['labels'].int())
                 self.metricsValEpoch(outputs.logits, batch['labels'].int())
 
-                #if idx % self.logInterval == 0 and idx > 0:
-                    #metric = self.metricsValBatch.compute()
-                    #mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()})
-                    #metric = self.metricsValBatch.reset()
-
         return None
 
     def fit_and_eval(self):
@@ -144,12 +135,12 @@ class deep_train():
 
             self.train_loop()
             metric = self.metricsTrainEpoch.compute()
-            mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},epoch_i)
+            mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},epoch_i+1)
             metric = self.metricsTrainEpoch.reset()
 
             self.test_loop()
             metric = self.metricsTestEpoch.compute()
-            mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},epoch_i)
+            mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},epoch_i+1)
             metric = self.metricsTestEpoch.reset()
 
         self.val_loop()

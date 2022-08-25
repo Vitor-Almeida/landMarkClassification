@@ -5,6 +5,7 @@ import gc
 import numpy as np
 from sklearn.model_selection import train_test_split
 from utils.definitions import ROOT_DIR
+import re
 
 #pyton -m dataset.landMarkTorchDataset => rodar testes 
 
@@ -62,8 +63,8 @@ def yelp_review(max_data_size, test_split):
     Xval['text'] = X_val.to_frame()
     
     XTest.to_csv(os.path.join(ROOT_DIR,'data','yelp','interm','test','test.csv'),index=False)
-    XTrain.to_csv(os.path.join(ROOT_DIR,'data','yelp','interm','test','train.csv'),index=False)
-    Xval.to_csv(os.path.join(ROOT_DIR,'data','yelp','interm','test','val.csv'),index=False)
+    XTrain.to_csv(os.path.join(ROOT_DIR,'data','yelp','interm','train','train.csv'),index=False)
+    Xval.to_csv(os.path.join(ROOT_DIR,'data','yelp','interm','val','val.csv'),index=False)
 
     with open(os.path.join(ROOT_DIR,'data','yelp','interm','id2label.json'),'w') as f:
         json.dump(id2label,f)
@@ -978,6 +979,100 @@ def ledgar_lexbench():
         json.dump(id2label,f)
         f.close()
     with open(os.path.join(ROOT_DIR,'data','ledgar_lexbench','interm','label2id.json'),'w') as f:
+        json.dump(label2id,f)
+        f.close()
+
+    return None
+
+def fix_scrape_landmarks(max_classes,test_split):
+
+    path = os.path.join(ROOT_DIR,'data','cornell_landmarks','raw','scrapedData.csv')
+
+    df = pd.read_csv(path)
+    
+    df = df[df["text"].apply(lambda x: len(x) > 1000)] ### checar depois pq aparece isso, pq tem processos que vem do scraper que nao puxa quase nada?
+
+    df = df.sample(frac=1)
+
+    def limpeza_basica(texto):
+
+        texto = texto[169:-124] ### tirando uns html que nao sairam
+
+        texto = re.sub('\. [0-9]+ ', ' ', texto)
+        texto = re.sub('\* \* \*', ' ', texto)
+        texto = re.sub('\.\' [0-9]+ ', ' ', texto)
+        texto = re.sub('\.+ \.+ \.+', ' ', texto)
+        texto = re.sub('\[.+?omitted\]', '', texto)
+        texto = re.sub('"\." [0-9]+ ', ' ', texto)
+        texto = re.sub('\' [0-9]+ [a-z]', ' ', texto,flags=re.IGNORECASE) #deixar todos com essa parada de ignore case?
+
+        texto = re.sub('"\." [0-9]+ ', ' ', texto)
+
+        texto = re.sub('\.[0-9]+ ', '.', texto) #pode mexer muito, muito especifico
+        texto = re.sub('\. [0-9]+ ', ' ', texto) #pode mexer muito, muito especifico
+
+        texto = re.sub(' +',' ',texto)
+
+        return texto
+
+    df['text'] = df['text'].apply(lambda row : limpeza_basica(row))
+
+    problem_column = 'subject'
+
+    problemList = df[problem_column].to_list()
+
+    unique, counts = np.unique(np.array(problemList), return_counts=True)
+
+    arr1inds = counts.argsort()
+    #sorted_arr1 = counts[arr1inds[::-1]]
+    sorted_arr2 = unique[arr1inds[::-1]]
+
+    problemList = sorted_arr2[:max_classes]
+
+    df = df[df['subject'].isin(problemList)]
+
+    max_label_num = len(problemList)
+
+    id2label = {idx:label for idx, label in enumerate(problemList.tolist())}
+    label2id = {label:idx for idx, label in enumerate(problemList.tolist())}
+    df['labels'] = df[problem_column].apply(lambda row: label2id[row])
+
+    df = df[['labels','text']]
+
+    X_train, X_testval, y_train, y_testval = train_test_split(df['text'],df['labels'], test_size=test_split, stratify= df['labels'])
+
+    del df
+    gc.collect()
+
+    XTestval = pd.DataFrame()
+    XTestval['labels'] = y_testval.to_frame()
+    XTestval['text'] = X_testval.to_frame()
+
+    X_test, X_val, y_test, y_val = train_test_split(XTestval['text'],XTestval['labels'], test_size=test_split, stratify= XTestval['labels'] )
+
+    del XTestval
+    gc.collect()
+
+    XTrain = pd.DataFrame()
+    XTrain['labels'] = y_train.to_frame()
+    XTrain['text'] = X_train.to_frame()
+
+    XTest = pd.DataFrame()
+    XTest['labels'] = y_test.to_frame()
+    XTest['text'] = X_test.to_frame()
+
+    Xval = pd.DataFrame()
+    Xval['labels'] = y_val.to_frame()
+    Xval['text'] = X_val.to_frame()
+    
+    XTest.to_csv(os.path.join(ROOT_DIR,'data','cornell_landmarks','interm','test','test.csv'),index=False)
+    XTrain.to_csv(os.path.join(ROOT_DIR,'data','cornell_landmarks','interm','train','train.csv'),index=False)
+    Xval.to_csv(os.path.join(ROOT_DIR,'data','cornell_landmarks','interm','val','val.csv'),index=False)
+
+    with open(os.path.join(ROOT_DIR,'data','cornell_landmarks','interm','id2label.json'),'w') as f:
+        json.dump(id2label,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','cornell_landmarks','interm','label2id.json'),'w') as f:
         json.dump(label2id,f)
         f.close()
 
