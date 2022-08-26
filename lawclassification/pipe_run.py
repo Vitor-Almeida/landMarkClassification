@@ -12,6 +12,8 @@ def main():
     #pipe.scotus_lexbench()
     #pipe.ledgar_lexbench()
     pipe.fix_scrape_landmarks(max_classes=8,test_split=0.2)
+    pipe.summary_facebook()
+
     
 if __name__ == '__main__':
     main()

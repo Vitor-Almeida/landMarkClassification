@@ -5,6 +5,7 @@
 *.rar
 *.csv
 *.env
+*.buffer
 *.props
 mlruns/
 mlflow.db

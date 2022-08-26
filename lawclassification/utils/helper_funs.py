@@ -30,11 +30,13 @@ def print_step_log(idx,cur_epoch,model,metricsViews):
     else:
         return None
 
-def read_experiments(fileName):
+def read_experiments(fileName,type):
 
     path = os.path.join(ROOT_DIR,'lawclassification',fileName)
 
     df = pd.read_csv(path)
+
+    df = df[df['type']==type]
 
     return df.to_dict(orient='records')
 

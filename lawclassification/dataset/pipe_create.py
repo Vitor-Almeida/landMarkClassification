@@ -1,4 +1,5 @@
 import pandas as pd
+from transformers import pipeline
 import os
 import json
 import gc
@@ -1076,4 +1077,78 @@ def fix_scrape_landmarks(max_classes,test_split):
         json.dump(label2id,f)
         f.close()
 
+    with open(os.path.join(ROOT_DIR,'data','cornell_landmarks_summary','interm','id2label.json'),'w') as f:
+        json.dump(id2label,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','cornell_landmarks_summary','interm','label2id.json'),'w') as f:
+        json.dump(label2id,f)
+        f.close()
+
     return None
+
+def summary_facebook():
+
+    def get_syllabus(row,char_size):
+
+        text = row
+
+        end_text = 'delivered the opinion of the Court'
+        start_text = 'Syllabus'
+
+        start_pos = text.find(start_text)
+        end_pos = text.find(end_text)
+
+        if (start_pos > 0 and end_pos > 0) and (end_pos > start_pos):
+            text = text[start_pos+len(start_text):end_pos]
+
+            if len(text) < int(char_size/2):
+                text = text[start_pos+len(start_text):start_pos+char_size]
+
+        elif start_pos < 0 and end_pos < 0:
+            text = text[0:char_size] # o tokenizer trunca, nao tem problema aq
+        elif start_pos > 0:
+            text = text[start_pos+len(start_text):start_pos+char_size] # o tokenizer trunca, nao tem problema aq
+        elif end_pos > 0:
+            text = text[end_pos+len(end_text):end_pos+char_size] # o tokenizer trunca, nao tem problema aq
+        else:
+            text = text[0:char_size]
+
+        if len(text) < int(char_size/2):
+            text = text[0:char_size]
+
+        return text.strip()
+
+    modelPath = os.path.join(ROOT_DIR,'lawclassification','models','external','facebook.bart-large-cnn')
+
+    summarizerFacebook = pipeline("summarization", model=modelPath, device=0)
+    tokenizerFaceBook = summarizerFacebook.tokenizer
+
+    testPath = os.path.join(ROOT_DIR,'data','cornell_landmarks','interm','test','test.csv')
+    trainPath = os.path.join(ROOT_DIR,'data','cornell_landmarks','interm','train','train.csv')
+    valPath = os.path.join(ROOT_DIR,'data','cornell_landmarks','interm','val','val.csv')
+
+    def summary_df(testPath):
+
+        df = pd.read_csv(testPath)
+        print(len(df))
+        #df = df.head(4)
+
+        df['text'] = df['text'].astype(str)
+        df['labels'] = df['labels'].astype(int)
+
+        #df['text'] = df['text'].apply(lambda row : get_syllabus(row,4700))
+
+        df = df[['labels','text']]
+
+        dfList = tokenizerFaceBook(df['text'].tolist(),padding='max_length', max_length = int((1024)*0.98), truncation=True, return_tensors="pt")
+        dfList = [tokenizerFaceBook.decode(idx, skip_special_tokens=True) for idx in dfList.input_ids]
+        dfList = summarizerFacebook(dfList, max_length=512, min_length=256, do_sample=False)
+        dfList = [idx['summary_text'] for idx in dfList]
+
+        df['text'] = pd.Series(dfList).to_frame()
+
+        return df
+
+    summary_df(testPath).to_csv(os.path.join(ROOT_DIR,'data','cornell_landmarks_summary','interm','test','test.csv'),index=False)
+    summary_df(trainPath).to_csv(os.path.join(ROOT_DIR,'data','cornell_landmarks_summary','interm','train','train.csv'),index=False)
+    summary_df(valPath).to_csv(os.path.join(ROOT_DIR,'data','cornell_landmarks_summary','interm','val','val.csv'),index=False)
