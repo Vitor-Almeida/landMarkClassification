@@ -37,6 +37,7 @@ def main():
         del train
         gc.collect()
 
+    
     for idx,experiment in enumerate(expDicBoost):
         print(f'begin of boost experiment: {idx+1}/{len(expDicBoost)}')
         print(f'Olhar resultados no mlflow !')

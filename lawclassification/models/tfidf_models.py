@@ -16,7 +16,7 @@ class xgb_tfidf():
         self.model = 'xgb'
         self.vectorizer = 'tfidf'
 
-        self.model_name = self.model + self.vectorizer
+        self.model_name = self.model + '_' + self.vectorizer
         self.dataname = expDic['dataname']
         self.problem_type = expDic['problem_type']
 
