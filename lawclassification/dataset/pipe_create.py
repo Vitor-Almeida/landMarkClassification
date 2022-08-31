@@ -585,7 +585,7 @@ def colab_torch_tweets():
 
         df = df[['labels','Tweet']]
 
-        df.rename(columns={'Tweet':'text'})
+        df.rename(columns={'Tweet':'text'},inplace=True)
 
         id2label = {idx:label for idx, label in enumerate(to_concat)}
         label2id = {label:idx for idx, label in enumerate(to_concat)}
@@ -1152,3 +1152,87 @@ def summary_facebook():
     summary_df(testPath).to_csv(os.path.join(ROOT_DIR,'data','cornell_landmarks_summary','interm','test','test.csv'),index=False)
     summary_df(trainPath).to_csv(os.path.join(ROOT_DIR,'data','cornell_landmarks_summary','interm','train','train.csv'),index=False)
     summary_df(valPath).to_csv(os.path.join(ROOT_DIR,'data','cornell_landmarks_summary','interm','val','val.csv'),index=False)
+
+def customer_complain_check_boost(max_row,test_split):
+
+    path = os.path.join(ROOT_DIR,'data','customer_complain','raw','rows.csv')
+
+    df = pd.read_csv(path)
+    df = df.sample(frac=1)
+    df = df[['Product', 'Consumer complaint narrative']].copy()
+    df = df[pd.notnull(df['Consumer complaint narrative'])]
+
+    df = df.sample(n=max_row, random_state=1)
+
+    #print(len(df))
+
+    df.replace({'Product': 
+                {'Credit reporting, credit repair services, or other personal consumer reports': 
+                'Credit reporting, repair, or other', 
+                'Credit reporting': 'Credit reporting, repair, or other',
+                'Credit card': 'Credit card or prepaid card',
+                'Prepaid card': 'Credit card or prepaid card',
+                'Payday loan': 'Payday loan, title loan, or personal loan',
+                'Money transfer': 'Money transfer, virtual currency, or money service',
+                'Virtual currency': 'Money transfer, virtual currency, or money service'}}, 
+                inplace= True)
+
+    problem_column = 'Product'
+
+    problemList = df[problem_column].to_list()
+
+    unique, counts = np.unique(np.array(problemList), return_counts=True)
+
+    arr1inds = counts.argsort()
+    sorted_arr2 = unique[arr1inds[::-1]]
+
+    problemList = sorted_arr2[:]
+
+    max_label_num = len(problemList)
+
+    id2label = {idx:label for idx, label in enumerate(problemList.tolist())}
+    label2id = {label:idx for idx, label in enumerate(problemList.tolist())}
+    df['labels'] = df[problem_column].apply(lambda row: label2id[row])
+
+    df.rename(columns={'Consumer complaint narrative':'text'},inplace=True)
+    df = df[['labels','text']]
+
+    X_train, X_testval, y_train, y_testval = train_test_split(df['text'],df['labels'], test_size=test_split)#, stratify= df['labels'])
+
+    del df
+    gc.collect()
+
+    XTestval = pd.DataFrame()
+    XTestval['labels'] = y_testval.to_frame()
+    XTestval['text'] = X_testval.to_frame()
+
+    X_test, X_val, y_test, y_val = train_test_split(XTestval['text'],XTestval['labels'], test_size=test_split)#, stratify= XTestval['labels'] )
+
+    del XTestval
+    gc.collect()
+
+    XTrain = pd.DataFrame()
+    XTrain['labels'] = y_train.to_frame()
+    XTrain['text'] = X_train.to_frame()
+
+    XTest = pd.DataFrame()
+    XTest['labels'] = y_test.to_frame()
+    XTest['text'] = X_test.to_frame()
+
+    Xval = pd.DataFrame()
+    Xval['labels'] = y_val.to_frame()
+    Xval['text'] = X_val.to_frame()
+    
+    XTest.to_csv(os.path.join(ROOT_DIR,'data','customer_complain','interm','test','test.csv'),index=False)
+    XTrain.to_csv(os.path.join(ROOT_DIR,'data','customer_complain','interm','train','train.csv'),index=False)
+    Xval.to_csv(os.path.join(ROOT_DIR,'data','customer_complain','interm','val','val.csv'),index=False)
+
+    with open(os.path.join(ROOT_DIR,'data','customer_complain','interm','id2label.json'),'w') as f:
+        json.dump(id2label,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','customer_complain','interm','label2id.json'),'w') as f:
+        json.dump(label2id,f)
+        f.close()
+
+    return None
+

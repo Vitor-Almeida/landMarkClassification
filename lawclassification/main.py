@@ -37,14 +37,19 @@ def main():
         del train
         gc.collect()
 
-    
     for idx,experiment in enumerate(expDicBoost):
         print(f'begin of boost experiment: {idx+1}/{len(expDicBoost)}')
         print(f'Olhar resultados no mlflow !')
 
+        mlflow.set_experiment(experiment['dataname']+experiment['model_name'])
+
         boostExp = boost.xgb_tfidf(experiment)
         boostExp.csv_to_dm()
-        boostExp.train()
+
+        mlflow.xgboost.autolog(log_input_examples=False,log_model_signatures=False,log_models=False)
+        with mlflow.start_run(run_name=experiment['descripton']):
+            #colocar optuna:
+            boostExp.train()
 
         del boostExp
         gc.collect()

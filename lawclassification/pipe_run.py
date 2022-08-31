@@ -1,4 +1,5 @@
 import dataset.pipe_create as pipe
+import dataset.pipe_graph as graph
 
 def main(): 
     #pipe.yelp_review(max_data_size=100000,test_split=0.2)
@@ -11,8 +12,10 @@ def main():
     #pipe.ecthr_b_lexbench()
     #pipe.scotus_lexbench()
     #pipe.ledgar_lexbench()
-    pipe.fix_scrape_landmarks(max_classes=8,test_split=0.2)
-    pipe.summary_facebook()
+    #pipe.fix_scrape_landmarks(max_classes=8,test_split=0.2)
+    #pipe.summary_facebook()
+    #pipe.customer_complain_check_boost(max_row=10000,test_split=0.25)
+    graph.create_graph(path='yelp',maxRows=20000,windowSize=2)
 
     
 if __name__ == '__main__':
