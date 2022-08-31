@@ -3,7 +3,7 @@ import spacy
 
 def main():
 
-    print('teu cu!')
+    print('d!')
 
 
 if __name__ == '__main__':

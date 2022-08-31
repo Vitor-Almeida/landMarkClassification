@@ -174,6 +174,7 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     rowIndicesList = []
     for wordRow in vocabularyVec:
         #bottleneck:
+        #pode tentar colocar ' ' na frente e atras de todos e fazer só 1 in 
         #indicesRow = [idx for idx,ngrams in enumerate(npAggText) if re.search(r'\b' + wordRow + r'\b', ngrams)]
         #indicesRow = [idx for idx,ngrams in enumerate(npAggText) if re.match(r'\b' + wordRow + r'\b', ngrams)]
         indicesRow = [idx for idx,ngrams in enumerate(npAggText) if ngrams.startswith(wordRow+' ') or ngrams.endswith(' '+wordRow) or ' '+wordRow+' ' in ngrams]
