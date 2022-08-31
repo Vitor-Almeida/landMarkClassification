@@ -2,7 +2,7 @@ import dataset.pipe_create as pipe
 import dataset.pipe_graph as graph
 
 def main(): 
-    #pipe.yelp_review(max_data_size=100000,test_split=0.2)
+    #pipe.yelp_review(max_data_size=20000,test_split=0.2)
     #pipe.dmoz_cats(test_split=0.2)
     #pipe.echr_build(problem_column='VIOLATED_ARTICLES',max_classes = 10)
     #pipe.colab_torch_tweets()
