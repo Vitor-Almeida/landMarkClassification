@@ -5,6 +5,7 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer,CountVectorizer
 import math
 from typing import List
+import itertools
 import re
 from tqdm.auto import tqdm
 import spacy
@@ -44,6 +45,7 @@ def _calc_pmi(rdx:int,
 
 NLP = spacy.load('en_core_web_lg')
 
+#usar a funcao de fast tokenizers to hugginface
 def _tokenizer(text:str) -> str:
 
     text = text[0:3000] #~512 words
@@ -68,19 +70,6 @@ def _load_csv(path: str,max_rows: int) -> pd.DataFrame:
     df = df.head(max_rows)
 
     return df
-
-def _aggNpArray(arr:np.array) -> np.array:
-
-    totalCountperWindow = arr[:,-2:].astype('int')
-    aggSum = np.bincount(totalCountperWindow[:,-1],weights=totalCountperWindow[:,-2])
-    uniqueId = np.unique(totalCountperWindow[:,-1])
-    uniqueVocab = np.unique(arr[:,0])
-    aggArr = np.concatenate((np.expand_dims(uniqueVocab,axis=0).T,
-                            np.expand_dims(uniqueId,axis=0).T,
-                            np.expand_dims(aggSum,axis=0).T),
-                            axis=1)
-
-    return aggArr
 
 def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     '''
@@ -184,21 +173,29 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
 
     rowIndicesList = []
     for wordRow in vocabularyVec:
-        indicesRow = [idx for idx,ngrams in enumerate(npAggText) if re.search(r'\b' + wordRow + r'\b', ngrams)]
+        #bottleneck:
+        #indicesRow = [idx for idx,ngrams in enumerate(npAggText) if re.search(r'\b' + wordRow + r'\b', ngrams)]
+        #indicesRow = [idx for idx,ngrams in enumerate(npAggText) if re.match(r'\b' + wordRow + r'\b', ngrams)]
+        indicesRow = [idx for idx,ngrams in enumerate(npAggText) if ngrams.startswith(wordRow+' ') or ngrams.endswith(' '+wordRow) or ' '+wordRow+' ' in ngrams]
         rowIndicesList.append(indicesRow)
 
-    totalWindows = np.sum(npAggCount)
-    progressBar = tqdm(range(int((len(vocabularyVec)**2)/2)))
+    vocabIdxPermutations = []
+    for r in itertools.product(range(len(vocabularyVec)), range(len(vocabularyVec))):
+        if r[0] >= r[1]:
+            vocabIdxPermutations.append([r[0],r[1]])
+
+    progressBar = tqdm(range(len(vocabIdxPermutations)))
+
     wordWordList = []
-    for rdx,wordRow in enumerate(vocabularyVec):
-        for cdx,wordCol in enumerate(vocabularyVec):
+    totalWindows = np.sum(npAggCount)
+    for idx in vocabIdxPermutations:
 
-            pmi = _calc_pmi(rdx,cdx,npAggCount,rowIndicesList,totalWindows)
-            
-            if pmi != None:
-                wordWordList.append([wordRow,wordCol,pmi,999])
+        pmi = _calc_pmi(idx[0],idx[1],npAggCount,rowIndicesList,totalWindows)
+        
+        if pmi != None:
+            wordWordList.append([vocabularyVec[idx[0]],vocabularyVec[idx[1]],pmi,999])
 
-            progressBar.update(1)
+        progressBar.update(1)
 
     dfWordWord = pd.DataFrame(wordWordList,columns=['src','tgt','weight','labels'])
 
