@@ -1236,3 +1236,69 @@ def customer_complain_check_boost(max_row,test_split):
 
     return None
 
+def ohsumed_create(test_split:float,max_classes:int) -> None:
+
+    path = os.path.join(ROOT_DIR,'data','ohsumed','raw','ohsumed-all')
+    fileContentList = []
+    for folder in os.listdir(path):
+
+        folderPath = os.path.join(ROOT_DIR,'data','ohsumed','raw','ohsumed-all',folder)
+        for file in os.listdir(folderPath):
+
+            with open(os.path.join(folderPath,file), encoding='utf8') as f:
+                labelId = folder
+                contents = f.read()
+                fileContentList.append([labelId,contents])
+                f.close()
+
+    df = pd.DataFrame(fileContentList,columns=['labels','text'])
+
+    df = df.sample(frac=1) # shuffle data
+
+    problemList = np.unique(df['labels'].to_numpy()).tolist()
+    unique, counts = np.unique(np.array(problemList), return_counts=True)
+    arr1inds = counts.argsort()
+    sorted_arr2 = unique[arr1inds[::-1]]
+    problemList = sorted_arr2[:max_classes]
+    df = df[df['labels'].isin(problemList)]
+
+    id2label = {idx:label for idx, label in enumerate(problemList.tolist())}
+    label2id = {label:idx for idx, label in enumerate(problemList.tolist())}
+    df['labels'] = df['labels'].apply(lambda row: label2id[row])
+
+    X_train, X_testval, y_train, y_testval = train_test_split(df['text'],df['labels'], test_size=test_split, stratify= df['labels'])
+
+    del df
+    gc.collect()
+
+    XTestval = pd.DataFrame()
+    XTestval['labels'] = y_testval.to_frame()
+    XTestval['text'] = X_testval.to_frame()
+
+    X_test, X_val, y_test, y_val = train_test_split(XTestval['text'],XTestval['labels'], test_size=test_split, stratify= XTestval['labels'] )
+
+    del XTestval
+    gc.collect()
+
+    XTrain = pd.DataFrame()
+    XTrain['labels'] = y_train.to_frame()
+    XTrain['text'] = X_train.to_frame()
+
+    XTest = pd.DataFrame()
+    XTest['labels'] = y_test.to_frame()
+    XTest['text'] = X_test.to_frame()
+
+    Xval = pd.DataFrame()
+    Xval['labels'] = y_val.to_frame()
+    Xval['text'] = X_val.to_frame()
+    
+    XTest.to_csv(os.path.join(ROOT_DIR,'data','ohsumed','interm','test','test.csv'),index=False)
+    XTrain.to_csv(os.path.join(ROOT_DIR,'data','ohsumed','interm','train','train.csv'),index=False)
+    Xval.to_csv(os.path.join(ROOT_DIR,'data','ohsumed','interm','val','val.csv'),index=False)
+
+    with open(os.path.join(ROOT_DIR,'data','ohsumed','interm','id2label.json'),'w') as f:
+        json.dump(id2label,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','ohsumed','interm','label2id.json'),'w') as f:
+        json.dump(label2id,f)
+        f.close()

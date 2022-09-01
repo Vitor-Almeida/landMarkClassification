@@ -1,10 +1,11 @@
-import spacy
+import os
+import pandas as pd
+from utils.definitions import ROOT_DIR
 
+def main(dataname:str) -> None:
 
-def main():
-
-    print('d!')
-
+    pathFile = os.path.join(ROOT_DIR,'lawclassification','data',dataname,'graph.csv')
+    df = pd.read_csv(pathFile)
 
 if __name__ == '__main__':
-    main()
+    main(dataname='yelp')
