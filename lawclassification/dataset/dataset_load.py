@@ -77,3 +77,15 @@ class deep_data(Dataset):
             #'token_type_ids': token_type_ids.squeeze(0), #faz diferenca esse buxo aqui? # tem que entender a parada de dos tokens especiais, separação de senteças
             'labels': torch.tensor(self.labels[idx])
             }
+
+
+class gcn_data(Dataset):
+    """
+    Load raw data in a pytorch dataset class
+    All data will follow the (label,text) format
+    """
+    def __init__(self, typeSplit,tokenizer,max_length,dataname,problem_type):
+
+        super(deep_data, self).__init__()
+        self.name = dataname
+        self.problem_type = problem_type

@@ -1236,7 +1236,9 @@ def customer_complain_check_boost(max_row,test_split):
 
     return None
 
-def ohsumed_create(test_split:float,max_classes:int) -> None:
+def ohsumed_create(test_split:float,max_classes:int,max_row:int) -> None:
+
+    #wget http://disi.unitn.it/moschitti/corpora/ohsumed-all-docs.tar.gz
 
     path = os.path.join(ROOT_DIR,'data','ohsumed','raw','ohsumed-all')
     fileContentList = []
@@ -1252,8 +1254,16 @@ def ohsumed_create(test_split:float,max_classes:int) -> None:
                 f.close()
 
     df = pd.DataFrame(fileContentList,columns=['labels','text'])
-
+    
     df = df.sample(frac=1) # shuffle data
+    df = df.head(max_row)
+
+    df['countHelper'] = 1
+    duplicDf = df.groupby(by=['text'])['countHelper'].transform(np.sum)
+    duplicDf = duplicDf.to_frame()
+    df = df.join(duplicDf,lsuffix='_df',rsuffix='_dup')
+    df = df[df['countHelper_dup']==1]
+    df = df[['labels','text']]
 
     problemList = np.unique(df['labels'].to_numpy()).tolist()
     unique, counts = np.unique(np.array(problemList), return_counts=True)

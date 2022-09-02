@@ -6,7 +6,6 @@ from sklearn.feature_extraction.text import TfidfVectorizer,CountVectorizer
 import math
 from typing import List
 import itertools
-import re
 from tqdm.auto import tqdm
 import spacy
 import gc
@@ -17,8 +16,6 @@ def _calc_pmi(rdx:int,
               rowIndicesList:List,
               totalWindows:np.int16) -> np.float16:
 
-    if cdx > rdx:
-        return None
     if cdx == rdx:
         return 1
 
@@ -61,13 +58,17 @@ def _tokenizer(text:str) -> str:
 def _load_csv(path: str,max_rows: int) -> pd.DataFrame:
 
     dfTrain = pd.read_csv(os.path.join(ROOT_DIR,'data',path,'interm','train','train.csv'))
-    dfTest = pd.read_csv(os.path.join(ROOT_DIR,'data',path,'interm','train','train.csv'))
-    dfVal = pd.read_csv(os.path.join(ROOT_DIR,'data',path,'interm','train','train.csv'))
+    dfTrain['split'] = 'train'
+    dfTest = pd.read_csv(os.path.join(ROOT_DIR,'data',path,'interm','test','test.csv'))
+    dfTest['split'] = 'test'
+    dfVal = pd.read_csv(os.path.join(ROOT_DIR,'data',path,'interm','val','val.csv'))
+    dfVal['split'] = 'val'
 
-    df = pd.concat([dfTrain,dfTest,dfVal])
-    #df = df.sample(frac=1)
-
+    df = pd.concat([dfTrain,dfTest,dfVal],ignore_index=True)
+    df = df.sample(frac=1)
+    
     df = df.head(max_rows)
+    df.reset_index(inplace=True,drop=True)
 
     return df
 
@@ -125,6 +126,12 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     labels['src'] = labels.index
     labels['src'] = labels['src'].apply(lambda row: 'doc_'+str(row))
 
+    splits = dfTable['split'].to_frame()
+    splits['src'] = splits.index
+    splits['src'] = splits['src'].apply(lambda row: 'doc_'+str(row))
+
+    #trainMask
+
     del dfTable
     gc.collect()
 
@@ -134,14 +141,20 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     dfCount = pd.DataFrame.sparse.from_spmatrix(countMatrix, columns=vocabularyWindow)
 
     dfMeltCount = []
-    for col in dfCount.columns:
-        tmpDf = pd.melt(dfCount[col].to_frame(),value_name='__value__',var_name='__variable__') #da pra fzer por grupos
+    step = int(len(dfCount.columns) / 100)+1 #isso aqui até o limite da memoria
+    for idx,cols in enumerate(range(0,len(dfCount.columns),step)):
+        next = step if idx == 0 else step*(idx+1)
+        next = len(dfCount.columns) if next+step-1 > len(dfCount.columns) else next
+    
+        tmpDf = pd.melt(dfCount.iloc[:,[cols,next-1]],value_name='__value__',var_name='__variable__')
         tmpDf['__value__'] = tmpDf['__value__'].astype(np.int16)
         tmpDf['__variable__'] = tmpDf['__variable__'].astype(str)
         tmpDf = tmpDf[tmpDf['__value__']!=0]
         dfMeltCount.append(tmpDf)
 
-    dfCount = pd.concat(dfMeltCount)
+        #tem q ver se row * coluna = row do novo df
+
+    dfCount = pd.concat(dfMeltCount,ignore_index=True)
     dfCount = dfCount.groupby(by=['__variable__']).sum()
     dfCount.reset_index(inplace=True)
     
@@ -164,6 +177,7 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     dfDocWord['docId'] = dfDocWord['docId'].apply(lambda row: 'doc_'+str(row))
     dfDocWord.rename(columns={'docId':'src','__variable__':'tgt','__value__':'weight'},inplace=True)
     dfDocWord = dfDocWord.merge(labels, how='left', on='src')
+    dfDocWord = dfDocWord.merge(splits, how='left', on='src')
 
     npAggText = dfCount['__variable__'].to_numpy(dtype=str)
     npAggCount = dfCount['__value__'].to_numpy(dtype=np.int16)
@@ -171,14 +185,16 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     del dfCount
     gc.collect()
 
+    progressBar = tqdm(range(len(vocabularyVec)))
     rowIndicesList = []
     for wordRow in vocabularyVec:
-        #bottleneck:
         #pode tentar colocar ' ' na frente e atras de todos e fazer só 1 in 
         #indicesRow = [idx for idx,ngrams in enumerate(npAggText) if re.search(r'\b' + wordRow + r'\b', ngrams)]
         #indicesRow = [idx for idx,ngrams in enumerate(npAggText) if re.match(r'\b' + wordRow + r'\b', ngrams)]
-        indicesRow = [idx for idx,ngrams in enumerate(npAggText) if ngrams.startswith(wordRow+' ') or ngrams.endswith(' '+wordRow) or ' '+wordRow+' ' in ngrams]
+        #indicesRow = [idx for idx,ngrams in enumerate(npAggText) if ngrams.startswith(wordRow+' ') or ngrams.endswith(' '+wordRow) or ' '+wordRow+' ' in ngrams]
+        indicesRow = [idx for idx,ngrams in enumerate(npAggText) if ' '+wordRow+' ' in ' '+ngrams+' ']
         rowIndicesList.append(indicesRow)
+        progressBar.update(1)
 
     vocabIdxPermutations = []
     for r in itertools.product(range(len(vocabularyVec)), range(len(vocabularyVec))):
@@ -189,18 +205,24 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
 
     wordWordList = []
     totalWindows = np.sum(npAggCount)
+    #bottleneck:
     for idx in vocabIdxPermutations:
 
         pmi = _calc_pmi(idx[0],idx[1],npAggCount,rowIndicesList,totalWindows)
         
         if pmi != None:
-            wordWordList.append([vocabularyVec[idx[0]],vocabularyVec[idx[1]],pmi,999])
+            wordWordList.append([vocabularyVec[idx[0]],vocabularyVec[idx[1]],pmi,999,'wordword'])
 
         progressBar.update(1)
 
-    dfWordWord = pd.DataFrame(wordWordList,columns=['src','tgt','weight','labels'])
+    dfWordWord = pd.DataFrame(wordWordList,columns=['src','tgt','weight','labels','split'])
 
     dfGraph = pd.concat([dfWordWord,dfDocWord])
+    np.testing.assert_array_equal(np.unique(dfWordWord['src']),np.unique(dfWordWord['tgt']))
+
+    dfGraph.drop_duplicates(subset=['src','tgt'],inplace=True)
+
+    dfGraph = dfGraph.sample(frac=1)
 
     dfGraph.to_csv(os.path.join(ROOT_DIR,'data',path,'interm','graph.csv'),index=False)
     

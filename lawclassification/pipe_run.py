@@ -15,8 +15,8 @@ def main():
     #pipe.fix_scrape_landmarks(max_classes=8,test_split=0.2)
     #pipe.summary_facebook()
     #pipe.customer_complain_check_boost(max_row=10000,test_split=0.25)
-    #graph.create_graph(path='yelp',maxRows=20000,windowSize=2)
-    pipe.ohsumed_create(test_split=0.2,max_classes=23)
+    #pipe.ohsumed_create(test_split=0.2,max_classes=23,max_row=20000)
+    graph.create_graph(path='ohsumed',maxRows=100000,windowSize=20)
 
     
 if __name__ == '__main__':
