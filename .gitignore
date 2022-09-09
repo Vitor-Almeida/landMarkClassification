@@ -10,8 +10,7 @@
 mlruns/
 mlflow.db
 data/
-notebooks/
-*.ipynb
+debugs/
 external/
 ############
 todo.txt
