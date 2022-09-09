@@ -19,7 +19,7 @@ class GCN(torch.nn.Module):
         self.conv2 = GCNConv(hidden_channels, out_channels, cached=True,
                              normalize=True,bias=True)
 
-    def forward(self, x, edge_index, edge_weight=None):
+    def forward(self, x, edge_index, edge_weight):
         x = F.dropout(x, p=0.5, training=self.training)
         x = self.conv1(x, edge_index, edge_weight).relu()
         x = F.dropout(x, p=0.5, training=self.training)
@@ -54,66 +54,74 @@ def dataload(dataname:str):
     #data.y: Target to train against (may have arbitrary shape), e.g., node-level targets of shape [num_nodes, *] or graph-level targets of shape [1, *]
     #data.pos: Node position matrix with shape [num_nodes, num_dimensions]
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    torch.cuda.empty_cache()
 
     pathFile = os.path.join(ROOT_DIR,'data',dataname,'interm','graph.csv')
-    rawData = pd.read_csv(pathFile,dtype={'src':str,'tgt':str,'weight':float,'labels':float})
+    rawData = pd.read_csv(pathFile,dtype={'src':str,'tgt':str,'weight':float,'labels':int,'split':str})
+    rawData = rawData.sample(frac=0.9)
+
+    #for faster testing:
+    #rawData = rawData.head(n=10000)
 
     #rawData = rawData.sample(frac=1)
     #rawData = rawData.sample(frac=0.1)
 
-    srcNodes = np.array(rawData['src'],dtype=str)
-    tgtNodes = np.array(rawData['tgt'],dtype=str)
+    #srcNodes = 
+    #tgtNodes = np.array(rawData['tgt'],dtype=str)
+    allNodes = np.array(rawData['src'],dtype=str)
     wgtEdges = np.array(rawData['weight'])
     labels = np.array(rawData['labels'])
-    allNodes = np.unique(np.concatenate((srcNodes,tgtNodes)))
+    splits = np.array(rawData['split'])
 
-    lablesUnique = np.unique(np.concatenate((np.expand_dims(srcNodes,1),np.expand_dims(labels,1)),axis=1),axis=0)[:,-1]
-    lablesUnique = lablesUnique.astype(float)
-    num_classes = len(np.unique(labels[np.where(labels<900)]))
+    allUniqueNodes = np.unique(allNodes)
+    #allUniqueLabels = np.unique(labels[np.where(labels!=999)])
+    allUniqueLabels = np.unique(labels)
 
-    allNodesWioDoc = np.unique(np.concatenate((srcNodes[np.where(labels<900)],tgtNodes[np.where(labels<900)])))
+    numClasses = len(allUniqueLabels)
 
-    #fix:
-    trainMask = np.random.choice(allNodesWioDoc, replace=False,size=int(allNodesWioDoc.size*0.8))
-    testvalMask = np.setdiff1d(allNodesWioDoc, trainMask)
-    valMask = np.random.choice(testvalMask, size=int(testvalMask.size*0.2))
-    testMask = np.setdiff1d(testvalMask, valMask)
+    allUniquePairsNodeSplit = np.unique(rawData[['src','split']].to_numpy(dtype=str),axis=0)
+    allUniquePairsNodeLabels = np.unique(rawData[['src','labels']].to_numpy(dtype=str),axis=0)
+    labelToNodes = allUniquePairsNodeLabels[:,1].astype('int')
 
     #trainMask = [True for node in allNodes if node in trainMask]
-    trainMask = [True if node in trainMask else False for node in allNodes]
-    valMask = [True if node in valMask else False for node in allNodes]
-    testMask = [True if node in testMask else False for node in allNodes]
+    trainMask = [True if label=='train' else False for label in allUniquePairsNodeSplit[:,1]]
+    valMask = [True if label=='val' else False for label in allUniquePairsNodeSplit[:,1]]
+    testMask = [True if label=='test' else False for label in allUniquePairsNodeSplit[:,1]]
 
-    id2labelNodes = {id:label for id,label in enumerate(allNodes.tolist())}
-    label2idNodes = {label:id for id,label in enumerate(allNodes.tolist())}
+    #encoding dos nodes, nome=>numero    id2labelNodes = {id:label for id,label in enumerate(allUniqueNodes.tolist())}
+    label2idNodes = {label:id for id,label in enumerate(allUniqueNodes.tolist())}
 
-    allNodesId = np.array([label2idNodes[idx] for idx in allNodes])
-    srcNodesId = np.array([label2idNodes[idx] for idx in srcNodes])
-    tgtNodesId = np.array([label2idNodes[idx] for idx in tgtNodes])
+    allUniqueNodesId = np.array([label2idNodes[idx] for idx in allUniqueNodes.tolist()])
 
-    oneHotMtx = np.zeros((allNodesId.size,allNodesId.size))
-    oneHotMtx[np.arange(allNodesId.size),allNodesId] = 1
-    edgeIndex = np.concatenate((np.expand_dims(srcNodesId,0),np.expand_dims(tgtNodesId,0)),axis=0)
+    #encoding das labels, 'int'=>0..n
+    id2label = {id:label for id,label in enumerate(allUniqueLabels.tolist())}
+    label2id = {label:id for id,label in enumerate(allUniqueLabels.tolist())}
+
+    srcNodesId = np.array([label2idNodes[idx] for idx in allNodes.tolist()])
+    labelId = np.array([label2id[idx] for idx in labels.tolist()])
+
+    oneHotMtx = np.zeros((allUniqueNodesId.size,allUniqueNodesId.size))
+    oneHotMtx[np.arange(allUniqueNodesId.size),allUniqueNodesId] = 1
+    edgeIndex = np.concatenate((np.expand_dims(srcNodesId,0),np.expand_dims(labelId,0)),axis=0)
 
     oneHotMtx = torch.tensor(oneHotMtx,dtype=torch.float32)
     edgeIndex = torch.tensor(edgeIndex,dtype=torch.long)
     wgtEdges = torch.tensor(wgtEdges,dtype=torch.float32)
-    labels = torch.tensor(labels,dtype=torch.long)
-    lablesUnique = torch.tensor(lablesUnique,dtype=torch.long)
+    labels = torch.tensor(labelToNodes,dtype=torch.long)
+    #lablesUnique = torch.tensor(allUniqueLabels,dtype=torch.long)
     trainMask = torch.tensor(trainMask,dtype=torch.bool)
     valMask = torch.tensor(valMask,dtype=torch.bool)
     testMask = torch.tensor(testMask,dtype=torch.bool)
 
     dataset = Data(x=oneHotMtx,
                    edge_index=edgeIndex,
-                   edge_attr=wgtEdges,
-                   y=lablesUnique,
+                   edge_weight=wgtEdges,
+                   y=labels,
                    test_mask=testMask,
                    train_mask=trainMask,
                    val_mask=valMask)
 
-    return dataset,num_classes
+    return dataset,numClasses
 
 
 def main(dataname:str) -> None:
@@ -125,8 +133,8 @@ def main(dataname:str) -> None:
 
     #params:
     hidden_channels = 16
-    lr = 0.01
-    epochs = 200
+    lr = 0.001
+    epochs = 1000
 
     model = GCN(dataset.num_features, hidden_channels, num_classes)
     model, data = model.to(device), dataset.to(device)
@@ -146,4 +154,4 @@ def main(dataname:str) -> None:
 
 
 if __name__ == '__main__':
-    main(dataname='yelp')
+    main(dataname='ohsumed')
