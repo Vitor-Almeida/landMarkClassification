@@ -11,6 +11,7 @@ mlruns/
 mlflow.db
 data/
 notebooks/
+*.ipynb
 external/
 ############
 todo.txt
