@@ -133,8 +133,8 @@ def main(dataname:str) -> None:
 
     #params:
     hidden_channels = 16
-    lr = 0.001
-    epochs = 1000
+    lr = 0.01
+    epochs = 200
 
     model = GCN(dataset.num_features, hidden_channels, num_classes)
     model, data = model.to(device), dataset.to(device)
