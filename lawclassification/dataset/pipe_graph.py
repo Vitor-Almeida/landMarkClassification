@@ -16,9 +16,6 @@ def _calc_pmi(rdx:int,
               rowIndicesList:List,
               totalWindows:np.int16) -> np.float16:
 
-    if cdx == rdx:
-        return 1
-
     rowSumTT = np.sum(npAgg[rowIndicesList[rdx]])
     colSumTT = np.sum(npAgg[rowIndicesList[cdx]])
 
@@ -35,22 +32,19 @@ def _calc_pmi(rdx:int,
     else:
         pmi = math.log(pRowCol / (pRow*pCol),2)
 
-    if pmi > 0:
-        return pmi
-    else:
-        return None
+    return pmi
 
 NLP = spacy.load('en_core_web_lg')
 
 #usar a funcao de fast tokenizers to hugginface
 def _tokenizer(text:str) -> str:
 
-    text = text[0:3000] #~512 words
+    #text = text[0:3000] #~512 words
     newText = []
 
     #slow:
     for word in NLP(text):
-        if (not word.is_stop or not word.is_punct) and (word.is_alpha and word.is_ascii and not word.is_digit and word.ent_iob_ == 'O'):
+        if (not word.is_stop or not word.is_punct) and (word.is_alpha and word.is_ascii and not word.is_digit):
             newText.append(word.lemma_.lower())
 
     return newText
@@ -89,7 +83,7 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     n     | something something ...
     '''
 
-    count_vector = CountVectorizer(tokenizer = _tokenizer,
+    count_vector = CountVectorizer(#tokenizer = _tokenizer,
                                 #stop_words = 'english', 
                                 #sublinear_tf = True, 
                                 ngram_range=(windowSize,windowSize),
@@ -103,7 +97,7 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
                                 max_features = None, #numero maximo de features
                                 vocabulary = None)
 
-    tfidf_vector = TfidfVectorizer(tokenizer = _tokenizer,
+    tfidf_vector = TfidfVectorizer(#tokenizer = _tokenizer,
                                 #stop_words = 'english', 
                                 #sublinear_tf = True, 
                                 ngram_range=(1,1),
@@ -130,8 +124,6 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     splits['src'] = splits.index
     splits['src'] = splits['src'].apply(lambda row: 'doc_'+str(row))
 
-    #trainMask
-
     del dfTable
     gc.collect()
 
@@ -144,15 +136,18 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     step = int(len(dfCount.columns) / 100)+1 #isso aqui até o limite da memoria
     for idx,cols in enumerate(range(0,len(dfCount.columns),step)):
         next = step if idx == 0 else step*(idx+1)
-        next = len(dfCount.columns) if next+step-1 > len(dfCount.columns) else next
+        next = len(dfCount.columns)+1 if next+step > len(dfCount.columns) else next
     
-        tmpDf = pd.melt(dfCount.iloc[:,[cols,next-1]],value_name='__value__',var_name='__variable__')
+        tmpDf = pd.melt(dfCount.iloc[:,cols:next-1],value_name='__value__',var_name='__variable__')
         tmpDf['__value__'] = tmpDf['__value__'].astype(np.int16)
         tmpDf['__variable__'] = tmpDf['__variable__'].astype(str)
         tmpDf = tmpDf[tmpDf['__value__']!=0]
+        #print(f"{cols}:{next-1}=>{sum(tmpDf['__value__'])}")
         dfMeltCount.append(tmpDf)
 
-        #tem q ver se row * coluna = row do novo df
+        if next == len(dfCount.columns)+1:
+            break
+
 
     dfCount = pd.concat(dfMeltCount,ignore_index=True)
     dfCount = dfCount.groupby(by=['__variable__']).sum()
@@ -183,39 +178,43 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     npAggCount = dfCount['__value__'].to_numpy(dtype=np.int16)
 
     del dfCount
+    del countMatrix
+    del count_vector
+    del tfidf_matrix
+    del tfidf_vector
+    del tmpDf
+    del labels
+    del splits
     gc.collect()
 
-    progressBar = tqdm(range(len(vocabularyVec)))
     rowIndicesList = []
-    for wordRow in vocabularyVec:
-        #pode tentar colocar ' ' na frente e atras de todos e fazer só 1 in 
-        #indicesRow = [idx for idx,ngrams in enumerate(npAggText) if re.search(r'\b' + wordRow + r'\b', ngrams)]
-        #indicesRow = [idx for idx,ngrams in enumerate(npAggText) if re.match(r'\b' + wordRow + r'\b', ngrams)]
-        #indicesRow = [idx for idx,ngrams in enumerate(npAggText) if ngrams.startswith(wordRow+' ') or ngrams.endswith(' '+wordRow) or ' '+wordRow+' ' in ngrams]
+    print('ngrams diferentes: ',len(npAggText))
+    for wordRow in tqdm(vocabularyVec):
         indicesRow = [idx for idx,ngrams in enumerate(npAggText) if ' '+wordRow+' ' in ' '+ngrams+' ']
         rowIndicesList.append(indicesRow)
-        progressBar.update(1)
 
-    vocabIdxPermutations = []
-    for r in itertools.product(range(len(vocabularyVec)), range(len(vocabularyVec))):
-        if r[0] >= r[1]:
-            vocabIdxPermutations.append([r[0],r[1]])
 
-    progressBar = tqdm(range(len(vocabIdxPermutations)))
+    del npAggText
+    del vocabularyWindow
+    gc.collect()
 
     wordWordList = []
     totalWindows = np.sum(npAggCount)
     #bottleneck:
-    for idx in vocabIdxPermutations:
+    for idx in tqdm(itertools.product(range(len(vocabularyVec)), range(len(vocabularyVec))),total=len(vocabularyVec)**2):
 
-        pmi = _calc_pmi(idx[0],idx[1],npAggCount,rowIndicesList,totalWindows)
-        
-        if pmi != None:
-            wordWordList.append([vocabularyVec[idx[0]],vocabularyVec[idx[1]],pmi,999,'wordword'])
+        if idx[0] == idx[1]:
+            wordWordList.append([vocabularyVec[idx[0]],vocabularyVec[idx[1]],1,999,'wordword'])
+        elif idx[0] > idx[1]:
+            pmi = _calc_pmi(idx[0],idx[1],npAggCount,rowIndicesList,totalWindows)
+            if pmi > 0:
+                wordWordList.append([vocabularyVec[idx[0]],vocabularyVec[idx[1]],pmi,999,'wordword'])
 
-        progressBar.update(1)
 
     dfWordWord = pd.DataFrame(wordWordList,columns=['src','tgt','weight','labels','split'])
+
+    del wordWordList
+    gc.collect
 
     dfGraph = pd.concat([dfWordWord,dfDocWord])
     np.testing.assert_array_equal(np.unique(dfWordWord['src']),np.unique(dfWordWord['tgt']))
