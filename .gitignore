@@ -10,6 +10,7 @@
 mlruns/
 mlflow.db
 data/
+notebooks/
 external/
 ############
 todo.txt

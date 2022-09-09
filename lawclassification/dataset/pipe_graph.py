@@ -5,10 +5,26 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer,CountVectorizer
 import math
 from typing import List
+#from multiprocessing import Process, Manager
+from datetime import datetime
+import multiprocessing
 import itertools
 from tqdm.auto import tqdm
 import spacy
 import gc
+
+def _find_word_ngrams(vocabularyVec,idx,npAggText,return_dict,lastOrder):
+
+    rowIndicesList = []
+    for wordRow in vocabularyVec:
+        indicesRow = [idx for idx,ngrams in enumerate(npAggText) if ' '+wordRow+' ' in ' '+ngrams+' ']
+        rowIndicesList.append(indicesRow)
+
+    return_dict[lastOrder]=rowIndicesList
+
+def _split_listN(a, n):
+    k, m = divmod(len(a), n)
+    return (a[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n))
 
 def _calc_pmi(rdx:int,
               cdx:int,
@@ -83,7 +99,7 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     n     | something something ...
     '''
 
-    count_vector = CountVectorizer(#tokenizer = _tokenizer,
+    count_vector = CountVectorizer(tokenizer = _tokenizer,
                                 #stop_words = 'english', 
                                 #sublinear_tf = True, 
                                 ngram_range=(windowSize,windowSize),
@@ -97,7 +113,7 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
                                 max_features = None, #numero maximo de features
                                 vocabulary = None)
 
-    tfidf_vector = TfidfVectorizer(#tokenizer = _tokenizer,
+    tfidf_vector = TfidfVectorizer(tokenizer = _tokenizer,
                                 #stop_words = 'english', 
                                 #sublinear_tf = True, 
                                 ngram_range=(1,1),
@@ -148,7 +164,6 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
         if next == len(dfCount.columns)+1:
             break
 
-
     dfCount = pd.concat(dfMeltCount,ignore_index=True)
     dfCount = dfCount.groupby(by=['__variable__']).sum()
     dfCount.reset_index(inplace=True)
@@ -187,12 +202,36 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     del splits
     gc.collect()
 
-    rowIndicesList = []
-    print('ngrams diferentes: ',len(npAggText))
-    for wordRow in tqdm(vocabularyVec):
-        indicesRow = [idx for idx,ngrams in enumerate(npAggText) if ' '+wordRow+' ' in ' '+ngrams+' ']
-        rowIndicesList.append(indicesRow)
+    print("Current Time Multi-thread:", datetime.now().strftime("%H:%M:%S"))
+    ####################################multi thread:############################################
 
+    nThreads = 14
+    vocabThreads = list(_split_listN(list(vocabularyVec), nThreads))
+
+    dicOrder = {}
+    prev = 0
+    for idx,lista in enumerate(vocabThreads):
+
+        dicOrder[idx] = len(lista)+prev
+        prev = prev + len(lista)
+
+    manager = multiprocessing.Manager()
+    return_dict = manager.dict()
+
+    procs = []
+    for idx,vocabVec in enumerate(vocabThreads):
+        proc = multiprocessing.Process(target=_find_word_ngrams, args=(vocabVec,idx,npAggText,return_dict,dicOrder[idx],))
+        procs.append(proc)
+        proc.start()
+
+    for proc in procs:
+        proc.join()
+    
+    rowIndicesList = [item for sublist in list(dict(sorted(return_dict.items())).values()) for item in sublist]
+
+    #manager.join()
+    ####################################multi thread:############################################
+    print("end time Multithread =", datetime.now().strftime("%H:%M:%S"))
 
     del npAggText
     del vocabularyWindow
@@ -209,7 +248,6 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
             pmi = _calc_pmi(idx[0],idx[1],npAggCount,rowIndicesList,totalWindows)
             if pmi > 0:
                 wordWordList.append([vocabularyVec[idx[0]],vocabularyVec[idx[1]],pmi,999,'wordword'])
-
 
     dfWordWord = pd.DataFrame(wordWordList,columns=['src','tgt','weight','labels','split'])
 
