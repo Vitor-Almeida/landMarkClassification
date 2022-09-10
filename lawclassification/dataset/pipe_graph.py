@@ -13,7 +13,25 @@ from tqdm.auto import tqdm
 import spacy
 import gc
 
-def _find_word_ngrams(vocabularyVec,idx,npAggText,return_dict,lastOrder):
+def _cross_words(vocabularyVec,npAggCount,rowIndicesList,totalWindows,idx,dicVocabTT,return_dict):
+
+    wordWordList = []
+
+    for wordTuple in itertools.product(vocabularyVec, vocabularyVec):
+
+        rdx = dicVocabTT[wordTuple[0]]
+        cdx = dicVocabTT[wordTuple[1]]
+
+        if rdx == cdx:
+            wordWordList.append([wordTuple[0],wordTuple[1],1,999,'wordword'])
+        elif rdx > cdx:
+            pmi = _calc_pmi(rdx,cdx,npAggCount,rowIndicesList,totalWindows)
+            if pmi > 0:
+                wordWordList.append([wordTuple[0],wordTuple[1],pmi,999,'wordword'])
+
+    return_dict[idx]=wordWordList
+
+def _find_word_ngrams(vocabularyVec,npAggText,return_dict,lastOrder):
 
     rowIndicesList = []
     for wordRow in vocabularyVec:
@@ -55,7 +73,7 @@ NLP = spacy.load('en_core_web_lg')
 #usar a funcao de fast tokenizers to hugginface
 def _tokenizer(text:str) -> str:
 
-    #text = text[0:3000] #~512 words
+    #text = text[0:500] #~512 words
     newText = []
 
     #slow:
@@ -203,7 +221,7 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     gc.collect()
 
     print("Current Time Multi-thread:", datetime.now().strftime("%H:%M:%S"))
-    ####################################multi thread:############################################
+    #################################### multi thread: ###############################################
 
     nThreads = 14
     vocabThreads = list(_split_listN(list(vocabularyVec), nThreads))
@@ -220,7 +238,7 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
 
     procs = []
     for idx,vocabVec in enumerate(vocabThreads):
-        proc = multiprocessing.Process(target=_find_word_ngrams, args=(vocabVec,idx,npAggText,return_dict,dicOrder[idx],))
+        proc = multiprocessing.Process(target=_find_word_ngrams, args=(vocabVec,npAggText,return_dict,dicOrder[idx],))
         procs.append(proc)
         proc.start()
 
@@ -229,25 +247,38 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     
     rowIndicesList = [item for sublist in list(dict(sorted(return_dict.items())).values()) for item in sublist]
 
-    #manager.join()
-    ####################################multi thread:############################################
+    manager.shutdown()
+    ###################################################################################################
     print("end time Multithread =", datetime.now().strftime("%H:%M:%S"))
 
     del npAggText
     del vocabularyWindow
     gc.collect()
 
-    wordWordList = []
+    #################################### multi thread: #############################################
+    print("Current Time Multi-thread2:", datetime.now().strftime("%H:%M:%S"))
     totalWindows = np.sum(npAggCount)
-    #bottleneck:
-    for idx in tqdm(itertools.product(range(len(vocabularyVec)), range(len(vocabularyVec))),total=len(vocabularyVec)**2):
 
-        if idx[0] == idx[1]:
-            wordWordList.append([vocabularyVec[idx[0]],vocabularyVec[idx[1]],1,999,'wordword'])
-        elif idx[0] > idx[1]:
-            pmi = _calc_pmi(idx[0],idx[1],npAggCount,rowIndicesList,totalWindows)
-            if pmi > 0:
-                wordWordList.append([vocabularyVec[idx[0]],vocabularyVec[idx[1]],pmi,999,'wordword'])
+    dicVocabTT = {word:idx for idx,word in enumerate(vocabularyVec)}
+
+    manager = multiprocessing.Manager()
+    return_dict = manager.dict()
+
+    procs = []
+    for idx,vocabVec in enumerate(vocabThreads):
+        proc = multiprocessing.Process(target=_cross_words, args=(vocabVec,npAggCount,rowIndicesList,totalWindows,idx,dicVocabTT,return_dict,))
+        procs.append(proc)
+        proc.start()
+
+    for proc in procs:
+        proc.join()
+
+    wordWordList = [item for sublist in list(dict(sorted(return_dict.items())).values()) for item in sublist]
+
+    manager.shutdown()
+
+    print("Current Time Multi-thread2:", datetime.now().strftime("%H:%M:%S"))
+    ###############################################################################################
 
     dfWordWord = pd.DataFrame(wordWordList,columns=['src','tgt','weight','labels','split'])
 
