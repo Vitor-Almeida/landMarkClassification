@@ -123,9 +123,6 @@ def _load_csv(path: str,max_rows: int, windowSize: int) -> pd.DataFrame:
         return row
 
     df['text'] = df['text'].apply(_fix_padding)
-
-    df = df.sample(frac=1)
-    
     df = df.head(max_rows)
     df.reset_index(inplace=True,drop=True)
 
