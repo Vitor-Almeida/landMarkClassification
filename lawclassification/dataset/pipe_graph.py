@@ -13,11 +13,11 @@ from tqdm.auto import tqdm
 import spacy
 import gc
 
-def _cross_words(vocabularyVec,npAggCount,rowIndicesList,totalWindows,idx,dicVocabTT,return_dict):
+def _cross_words(vocabularyVec,npAggCount,rowIndicesList,totalWindows,idx,dicVocabTT,vocabTT,return_dict):
 
     wordWordList = []
 
-    for wordTuple in itertools.product(vocabularyVec, vocabularyVec):
+    for wordTuple in itertools.product(vocabularyVec, vocabTT):
 
         rdx = dicVocabTT[wordTuple[0]]
         cdx = dicVocabTT[wordTuple[1]]
@@ -40,6 +40,18 @@ def _find_word_ngrams(vocabularyVec,npAggText,return_dict,lastOrder):
 
     return_dict[lastOrder]=rowIndicesList
 
+def _remove_non_pairs(vocabularyVec,rowIndicesList,dicVocabTT):
+
+    flag_remove = False
+
+    for n in rowIndicesList:
+        for v in rowIndicesList:
+            if np.intersect1d(n,v)!=None:
+                flag_remove = True
+                break
+
+    return None
+
 def _split_listN(a, n):
     k, m = divmod(len(a), n)
     return (a[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n))
@@ -60,30 +72,34 @@ def _calc_pmi(rdx:int,
     pCol = colSumTT / totalWindows
     pRowCol = rowColSumTT / totalWindows
     
-    if pRowCol == 0 or (pRow*pCol == 0):
+    #if pRowCol == 0 or (pRow*pCol == 0):
+    if pRowCol == 0:
         #avoid math errors
         pmi = 0
     else:
-        pmi = math.log(pRowCol / (pRow*pCol),2)
+        #pmi = math.log(pRowCol / (pRow*pCol),2)
+        pmi = math.log(pRowCol / (pRow*pCol) )
 
     return pmi
 
 NLP = spacy.load('en_core_web_lg')
 
-#usar a funcao de fast tokenizers to hugginface
+#usar a funcao de fast tokenizers do hugginface
 def _tokenizer(text:str) -> str:
+
+    #be careful to not remove the special padding with the tokenzier 'pad__gcn'
 
     #text = text[0:500] #~512 words
     newText = []
 
     #slow:
     for word in NLP(text):
-        if (not word.is_stop or not word.is_punct) and (word.is_alpha and word.is_ascii and not word.is_digit):
+        if ((not word.is_stop or not word.is_punct) and (word.is_alpha and word.is_ascii and not word.is_digit)) or (word.text == 'pad__gcn'):
             newText.append(word.lemma_.lower())
 
     return newText
 
-def _load_csv(path: str,max_rows: int) -> pd.DataFrame:
+def _load_csv(path: str,max_rows: int, windowSize: int) -> pd.DataFrame:
 
     dfTrain = pd.read_csv(os.path.join(ROOT_DIR,'data',path,'interm','train','train.csv'))
     dfTrain['split'] = 'train'
@@ -93,6 +109,21 @@ def _load_csv(path: str,max_rows: int) -> pd.DataFrame:
     dfVal['split'] = 'val'
 
     df = pd.concat([dfTrain,dfTest,dfVal],ignore_index=True)
+
+    def _fix_padding(row):
+
+        if len(row.split()) < windowSize:
+
+            tokenizerSafeMargin = 5 #different tokenizers might count different, so we put a safe margin
+
+            padding = ['pad__gcn']*((windowSize - len(row.split())) + tokenizerSafeMargin)
+            padding = ' '.join(padding)
+            row = row + ' ' + padding
+
+        return row
+
+    df['text'] = df['text'].apply(_fix_padding)
+
     df = df.sample(frac=1)
     
     df = df.head(max_rows)
@@ -146,10 +177,10 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
                                 vocabulary = None)
 
 
-    dfTable = _load_csv(path,maxRows)
+    dfTable = _load_csv(path,maxRows,windowSize)
 
     countMatrix = count_vector.fit_transform(dfTable['text'])
-    tfidf_matrix = tfidf_vector.fit_transform(dfTable['text'])
+    tfidfMatrix = tfidf_vector.fit_transform(dfTable['text'])
     labels = dfTable['labels'].to_frame()
     labels['src'] = labels.index
     labels['src'] = labels['src'].apply(lambda row: 'doc_'+str(row))
@@ -164,58 +195,24 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     vocabularyVec = tfidf_vector.get_feature_names_out().astype('U')
     vocabularyWindow = count_vector.get_feature_names_out().astype('U')
 
-    dfCount = pd.DataFrame.sparse.from_spmatrix(countMatrix, columns=vocabularyWindow)
+    sum_words = countMatrix.sum(axis = 0) 
+    words_freq = [[word, sum_words[0, i]] for word, i in count_vector.vocabulary_.items()]
 
-    dfMeltCount = []
-    step = int(len(dfCount.columns) / 100)+1 #isso aqui até o limite da memoria
-    for idx,cols in enumerate(range(0,len(dfCount.columns),step)):
-        next = step if idx == 0 else step*(idx+1)
-        next = len(dfCount.columns)+1 if next+step > len(dfCount.columns) else next
+    dfCount = pd.DataFrame(words_freq,columns=['__variable__','__value__'])
+    npAggText = dfCount['__variable__'].to_numpy(dtype=str)
+    npAggCount = dfCount['__value__'].to_numpy(dtype=int)
     
-        tmpDf = pd.melt(dfCount.iloc[:,cols:next-1],value_name='__value__',var_name='__variable__')
-        tmpDf['__value__'] = tmpDf['__value__'].astype(np.int16)
-        tmpDf['__variable__'] = tmpDf['__variable__'].astype(str)
-        tmpDf = tmpDf[tmpDf['__value__']!=0]
-        #print(f"{cols}:{next-1}=>{sum(tmpDf['__value__'])}")
-        dfMeltCount.append(tmpDf)
+    idToVocab = {label:idx for idx, label in tfidf_vector.vocabulary_.items()}
 
-        if next == len(dfCount.columns)+1:
-            break
-
-    dfCount = pd.concat(dfMeltCount,ignore_index=True)
-    dfCount = dfCount.groupby(by=['__variable__']).sum()
-    dfCount.reset_index(inplace=True)
-    
-    dfDocWord = pd.DataFrame.sparse.from_spmatrix(tfidf_matrix, columns=vocabularyVec)
-    dfDocWord['docId'] = dfDocWord.index
-
-    dfMeltCount = []
-    for col in dfDocWord.columns[:-1]:
-        tmpDf = pd.melt(dfDocWord[[col,'docId']],id_vars=['docId'],value_name='__value__',var_name='__variable__')
-        tmpDf = tmpDf[tmpDf['__value__']!=0]
-        tmpDf.set_index(['docId','__variable__'],drop=True,inplace=True)
-        tmpDf.reset_index(inplace=True)
-        dfMeltCount.append(tmpDf)
-
-    dfDocWord = pd.concat(dfMeltCount)
-    del dfMeltCount
-    gc.collect()
-
-    dfDocWord.reset_index(inplace=True,drop=True)
-    dfDocWord['docId'] = dfDocWord['docId'].apply(lambda row: 'doc_'+str(row))
-    dfDocWord.rename(columns={'docId':'src','__variable__':'tgt','__value__':'weight'},inplace=True)
+    words_freq = [['doc_'+str(i), idToVocab[j], tfidfMatrix[i,j]] for i, j in zip(*tfidfMatrix.nonzero())]
+    dfDocWord = pd.DataFrame(words_freq,columns=['src','tgt','weight'])
     dfDocWord = dfDocWord.merge(labels, how='left', on='src')
     dfDocWord = dfDocWord.merge(splits, how='left', on='src')
-
-    npAggText = dfCount['__variable__'].to_numpy(dtype=str)
-    npAggCount = dfCount['__value__'].to_numpy(dtype=np.int16)
 
     del dfCount
     del countMatrix
     del count_vector
-    del tfidf_matrix
     del tfidf_vector
-    del tmpDf
     del labels
     del splits
     gc.collect()
@@ -266,7 +263,15 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
 
     procs = []
     for idx,vocabVec in enumerate(vocabThreads):
-        proc = multiprocessing.Process(target=_cross_words, args=(vocabVec,npAggCount,rowIndicesList,totalWindows,idx,dicVocabTT,return_dict,))
+        proc = multiprocessing.Process(target=_cross_words, args=(vocabVec,
+                                                                  npAggCount,
+                                                                  rowIndicesList,
+                                                                  totalWindows,
+                                                                  idx,
+                                                                  dicVocabTT,
+                                                                  vocabularyVec,
+                                                                  return_dict,
+                                                                  ))
         procs.append(proc)
         proc.start()
 
@@ -285,12 +290,14 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     del wordWordList
     gc.collect
 
-    dfGraph = pd.concat([dfWordWord,dfDocWord])
+    dfGraph = pd.concat([dfWordWord,dfDocWord],ignore_index=True)
     np.testing.assert_array_equal(np.unique(dfWordWord['src']),np.unique(dfWordWord['tgt']))
 
     dfGraph.drop_duplicates(subset=['src','tgt'],inplace=True)
 
     dfGraph = dfGraph.sample(frac=1)
+
+    dfGraph = dfGraph[(dfGraph['src']!='pad__gcn') & (dfGraph['tgt']!='pad__gcn')]
 
     dfGraph.to_csv(os.path.join(ROOT_DIR,'data',path,'interm','graph.csv'),index=False)
     

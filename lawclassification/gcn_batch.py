@@ -5,9 +5,19 @@ import pandas as pd
 from utils.definitions import ROOT_DIR
 import torch.nn.functional as F
 from torch_geometric.logging import log
+from torch_geometric.loader import DataLoader
 import torch_geometric.data as data
 import pandas as pd
 import numpy as np
+
+from datetime import datetime
+
+from torch_geometric.loader import ClusterData
+from torch_geometric.loader import ClusterLoader
+
+
+from torch_geometric.datasets import Planetoid
+from torch_geometric.datasets import TUDataset
 
 class GCN(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels):
@@ -24,27 +34,43 @@ class GCN(torch.nn.Module):
         x = self.conv2(x, edge_index, edge_weight)
         return x
 
-def train(model,optimizer,data):
+def train(model,optimizer,loader,device):
+
     model.train()
-    optimizer.zero_grad()
-    out = model(data.x, data.edge_index, data.edge_attr)
-    loss = F.cross_entropy(out[data.train_mask], data.y[data.train_mask])
-    loss.backward()
-    optimizer.step()
-    return float(loss)
+    total_loss = total_nodes = 0
+
+    print('começo train:', datetime.now().strftime("%H:%M:%S"))
+
+    for batch in loader:
+        batch = batch.to(device)
+
+        optimizer.zero_grad()
+        out = model(batch.x, batch.edge_index, batch.edge_weight) #<=
+        loss = F.cross_entropy(out[batch.train_mask], batch.y[batch.train_mask])
+        loss.backward()
+        optimizer.step()
+
+        nodes = batch.train_mask.sum().item()
+        total_loss += loss.item() * nodes
+        total_nodes += nodes
+
+    print('fim train:', datetime.now().strftime("%H:%M:%S"))
+    return float(total_loss / total_nodes)
 
 def test(model,data):
 
     #for batch in data:
+    print('começo test:', datetime.now().strftime("%H:%M:%S"))
 
     with torch.no_grad():
         model.eval()
-        pred = model(data.x, data.edge_index, data.edge_attr).argmax(dim=-1)
+        pred = model(data.x, data.edge_index, data.edge_weight).argmax(dim=-1)
 
         accs = []
         for mask in [data.train_mask, data.val_mask, data.test_mask]:
             accs.append(int((pred[mask] == data.y[mask]).sum()) / int(mask.sum()))
 
+    print('fim test:', datetime.now().strftime("%H:%M:%S"))
     return accs
 
 def dataload(dataname:str):
@@ -66,9 +92,9 @@ def dataload(dataname:str):
     pathFile = os.path.join(ROOT_DIR,'data',dataname,'interm','graph.csv')
     rawData = pd.read_csv(pathFile,dtype={'src':str,'tgt':str,'weight':float,'labels':int,'split':str})
 
-    #rawData = rawData[(rawData['labels']<5) | (rawData['split']=='wordword')]
+    #rawData = rawData[(rawData['labels']<8) | (rawData['split']=='wordword')]
 
-    #rawData = rawData.sample(frac=0.7)
+    rawData = rawData.sample(frac=1)
 
     #for faster testing:
     #rawData = rawData.head(n=10000)
@@ -125,44 +151,50 @@ def dataload(dataname:str):
 
     dataset = data.Data(x=oneHotMtx,
                    edge_index=edgeIndex,
-                   edge_attr=wgtEdges,
+                   edge_weight=wgtEdges,
                    y=labels,
                    test_mask=testMask,
                    train_mask=trainMask,
                    val_mask=valMask)
 
-    return dataset,numClasses
+    return ClusterData(dataset,20,log=False),dataset,numClasses
+
 
 def main(dataname:str) -> None:
 
     torch.cuda.empty_cache()
 
-    dataset,num_classes = dataload(dataname)
-
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    data,fullGraph,num_classes = dataload(dataname)
+
+    #data = data.to(device)
+    
+    dataLoader = ClusterLoader(data,batch_size=4,shuffle=True,num_workers=8,drop_last=True)
+
+    #dataLoader = DataLoader([data], batch_size=32, shuffle=True)
 
     #params:
     hidden_channels = 200
     lr = 0.02
-    epochs = 5000
+    epochs = 200
 
-    model = GCN(dataset.num_features, hidden_channels, num_classes)
-    model, data = model.to(device), dataset.to(device)
-    #optimizer = torch.optim.Adam([
-    #    dict(params=model.conv1.parameters(), weight_decay=5e-4),
-    #    dict(params=model.conv2.parameters(), weight_decay=0)
-    #], lr=lr)  # Only perform weight-decay on first convolution.
+    model = GCN(data.data.num_features, hidden_channels, num_classes)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)  # Only perform weight-decay on first convolution.
+    model = model.to(device)
+    optimizer = torch.optim.Adam([
+        dict(params=model.conv1.parameters(), weight_decay=5e-4),
+        dict(params=model.conv2.parameters(), weight_decay=0)
+    ], lr=lr)  # Only perform weight-decay on first convolution.
 
     best_val_acc = final_test_acc = 0
     for epoch in range(1, epochs + 1):
-        loss = train(model,optimizer,dataset)
-        train_acc, val_acc, tmp_test_acc = test(model,data)
-        #if val_acc > best_val_acc:
-        #    best_val_acc = val_acc
-        #    test_acc = tmp_test_acc
-        print(f'Epoch: {epoch} Loss: {round(loss,4)} Train: {round(train_acc,4)} Val: {round(val_acc,4)} Test: {round(tmp_test_acc,4)}')
+        loss = train(model, optimizer, dataLoader, device)
+        train_acc, val_acc, tmp_test_acc = test(model, fullGraph.to(device))
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            test_acc = tmp_test_acc
+        print(f'Epoch: {epoch} Loss: {loss} Train: {train_acc} Val: {val_acc} Test: {test_acc}')
+        #log(Epoch=epoch, Loss=loss, Train=train_acc, Val=val_acc, Test=test_acc)
 
 
 if __name__ == '__main__':
