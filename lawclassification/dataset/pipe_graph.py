@@ -24,10 +24,17 @@ def _cross_words(vocabularyVec,npAggCount,rowIndicesList,totalWindows,idx,dicVoc
 
         if rdx == cdx:
             wordWordList.append([wordTuple[0],wordTuple[1],1,999,'wordword'])
+
+        #every thing that is rdx < cdx, will be a selfloop, 'car' -> 'dog' and 'dog' -> 'car'
         elif rdx > cdx:
-            pmi = _calc_pmi(rdx,cdx,npAggCount,rowIndicesList,totalWindows)
-            if pmi > 0:
-                wordWordList.append([wordTuple[0],wordTuple[1],pmi,999,'wordword'])
+
+            indicesRowandCol = list(np.intersect1d(rowIndicesList[rdx],rowIndicesList[cdx]))
+
+            #if indicesRowandCol is empity, pmi is log(0), so we try to calculate first, so we can skip some processing lines.
+            if indicesRowandCol:
+                pmi = _calc_pmi(rdx,cdx,npAggCount,rowIndicesList,indicesRowandCol,totalWindows)
+                if pmi > 0:
+                    wordWordList.append([wordTuple[0],wordTuple[1],pmi,999,'wordword'])
 
     return_dict[idx]=wordWordList
 
@@ -40,18 +47,6 @@ def _find_word_ngrams(vocabularyVec,npAggText,return_dict,lastOrder):
 
     return_dict[lastOrder]=rowIndicesList
 
-def _remove_non_pairs(vocabularyVec,rowIndicesList,dicVocabTT):
-
-    flag_remove = False
-
-    for n in rowIndicesList:
-        for v in rowIndicesList:
-            if np.intersect1d(n,v)!=None:
-                flag_remove = True
-                break
-
-    return None
-
 def _split_listN(a, n):
     k, m = divmod(len(a), n)
     return (a[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n))
@@ -60,27 +55,18 @@ def _calc_pmi(rdx:int,
               cdx:int,
               npAgg:np.array,
               rowIndicesList:List,
+              indicesRowandCol:List,
               totalWindows:np.int16) -> np.float16:
 
     rowSumTT = np.sum(npAgg[rowIndicesList[rdx]])
     colSumTT = np.sum(npAgg[rowIndicesList[cdx]])
-
-    indicesRowandCol = list(np.intersect1d(rowIndicesList[rdx],rowIndicesList[cdx]))
     rowColSumTT = np.sum(npAgg[indicesRowandCol])
 
     pRow = rowSumTT / totalWindows
     pCol = colSumTT / totalWindows
     pRowCol = rowColSumTT / totalWindows
     
-    #if pRowCol == 0 or (pRow*pCol == 0):
-    if pRowCol == 0:
-        #avoid math errors
-        pmi = 0
-    else:
-        #pmi = math.log(pRowCol / (pRow*pCol),2)
-        pmi = math.log(pRowCol / (pRow*pCol) )
-
-    return pmi
+    return math.log(pRowCol / (pRow*pCol) )
 
 NLP = spacy.load('en_core_web_lg')
 
@@ -154,8 +140,8 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
                                 encoding = 'utf-8',
                                 decode_error = 'strict',
                                 dtype = np.int16,
-                                max_df = 1.0, #tirar 'outliers' palavras muito repetidas entre documentos
-                                min_df = 1, #tirar 'outliers' palavras muito raras entre documentos#'cut-off'
+                                #max_df = 1.0, #tirar 'outliers' palavras muito repetidas entre documentos
+                                #min_df = 1, #tirar 'outliers' palavras muito raras entre documentos#'cut-off'
                                 max_features = None, #numero maximo de features
                                 vocabulary = None)
 
@@ -168,11 +154,13 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
                                 encoding = 'utf-8',
                                 decode_error = 'strict',
                                 dtype = np.float32,
-                                max_df = 1.0, #tirar 'outliers' palavras muito repetidas entre documentos
-                                min_df = 1, #tirar 'outliers' palavras muito raras entre documentos#'cut-off'
+                                #max_df = 1.0, #tirar 'outliers' palavras muito repetidas entre documentos
+                                #min_df = 1, #tirar 'outliers' palavras muito raras entre documentos#'cut-off'
                                 max_features = None, #numero maximo de features
                                 vocabulary = None)
 
+    print('dataset: ',path)
+    print("Start Time Tokenizer:", datetime.now().strftime("%H:%M:%S"))
 
     dfTable = _load_csv(path,maxRows,windowSize)
 
@@ -217,7 +205,7 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     print("Current Time Multi-thread:", datetime.now().strftime("%H:%M:%S"))
     #################################### multi thread: ###############################################
 
-    nThreads = 14
+    nThreads = 12
     vocabThreads = list(_split_listN(list(vocabularyVec), nThreads))
 
     dicOrder = {}
@@ -250,7 +238,6 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     gc.collect()
 
     #################################### multi thread: #############################################
-    print("Current Time Multi-thread2:", datetime.now().strftime("%H:%M:%S"))
     totalWindows = np.sum(npAggCount)
 
     dicVocabTT = {word:idx for idx,word in enumerate(vocabularyVec)}
@@ -279,7 +266,7 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
 
     manager.shutdown()
 
-    print("Current Time Multi-thread2:", datetime.now().strftime("%H:%M:%S"))
+    print("end Time Multi-thread2:", datetime.now().strftime("%H:%M:%S"))
     ###############################################################################################
 
     dfWordWord = pd.DataFrame(wordWordList,columns=['src','tgt','weight','labels','split'])
