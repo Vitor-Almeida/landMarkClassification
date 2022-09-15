@@ -30,7 +30,7 @@ def _cross_words(vocabularyVec,npAggCount,rowIndicesList,totalWindows,idx,dicVoc
 
             indicesRowandCol = list(np.intersect1d(rowIndicesList[rdx],rowIndicesList[cdx]))
 
-            #if indicesRowandCol is empity, pmi is log(0), so we try to calculate first, so we can skip some processing lines.
+            #if indicesRowandCol is empty, pmi is log(0), so we try to calculate first, so we can skip some processing lines.
             if indicesRowandCol:
                 pmi = _calc_pmi(rdx,cdx,npAggCount,rowIndicesList,indicesRowandCol,totalWindows)
                 if pmi > 0:
@@ -43,6 +43,9 @@ def _find_word_ngrams(vocabularyVec,npAggText,return_dict,lastOrder):
     rowIndicesList = []
     for wordRow in vocabularyVec:
         indicesRow = [idx for idx,ngrams in enumerate(npAggText) if ' '+wordRow+' ' in ' '+ngrams+' ']
+        #for wordCol in vocabularyVec:
+            #indicesRow = [idx for idx,ngrams in enumerate(npAggText) if ' '+wordRow+' ' in ' '+ngrams+' ' and ' '+wordCol+' ' in ' '+ngrams+' ']
+            #2d
         rowIndicesList.append(indicesRow)
 
     return_dict[lastOrder]=rowIndicesList
@@ -164,6 +167,8 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
 
     dfTable = _load_csv(path,maxRows,windowSize)
 
+    print('num of chars :', sum(len(s) for s in dfTable['text']))
+
     countMatrix = count_vector.fit_transform(dfTable['text'])
     tfidfMatrix = tfidf_vector.fit_transform(dfTable['text'])
     labels = dfTable['labels'].to_frame()
@@ -179,6 +184,9 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
 
     vocabularyVec = tfidf_vector.get_feature_names_out().astype('U')
     vocabularyWindow = count_vector.get_feature_names_out().astype('U')
+
+    print('vocab: ',len(vocabularyVec))
+    print('windows: ',len(vocabularyWindow))
 
     sum_words = countMatrix.sum(axis = 0) 
     words_freq = [[word, sum_words[0, i]] for word, i in count_vector.vocabulary_.items()]
@@ -205,7 +213,7 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     print("Current Time Multi-thread:", datetime.now().strftime("%H:%M:%S"))
     #################################### multi thread: ###############################################
 
-    nThreads = 12
+    nThreads = 16
     vocabThreads = list(_split_listN(list(vocabularyVec), nThreads))
 
     dicOrder = {}
@@ -245,6 +253,14 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     manager = multiprocessing.Manager()
     return_dict = manager.dict()
 
+    #vocabTT / vocabularyVec
+    #colocar somente palavras do vocabularyvec que tem ao menos 1 match com qualquer outra palavra (nao da, sem aumentar a complexidade)
+
+    #fazer um shuffle dentro do vocabthreadsa para as threads acabarem juntas
+
+    #for wordTuple in itertools.product(vocabularyVec, vocabTT): <-- checar se rodar isso, só fazendo append de quem de fato precisa ser calculado, fica lento
+    #gerar já os n sets, e desses n sets dividr em 16 pra calcular o pmi
+
     procs = []
     for idx,vocabVec in enumerate(vocabThreads):
         proc = multiprocessing.Process(target=_cross_words, args=(vocabVec,
@@ -262,6 +278,7 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     for proc in procs:
         proc.join()
 
+    #checar se esse aqui precisa ta sort:
     wordWordList = [item for sublist in list(dict(sorted(return_dict.items())).values()) for item in sublist]
 
     manager.shutdown()
@@ -279,7 +296,7 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
 
     dfGraph.drop_duplicates(subset=['src','tgt'],inplace=True)
 
-    dfGraph = dfGraph.sample(frac=1)
+    #dfGraph = dfGraph.sample(frac=1)
 
     dfGraph = dfGraph[(dfGraph['src']!='pad__gcn') & (dfGraph['tgt']!='pad__gcn')]
 

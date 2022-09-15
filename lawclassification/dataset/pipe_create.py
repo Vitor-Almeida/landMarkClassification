@@ -1312,3 +1312,17 @@ def ohsumed_create(test_split:float,max_classes:int,max_row:int) -> None:
     with open(os.path.join(ROOT_DIR,'data','ohsumed','interm','label2id.json'),'w') as f:
         json.dump(label2id,f)
         f.close()
+
+def tj(test_split:float,max_classes:int,max_rows:int,selected_col:str) -> None:
+
+    path = os.path.join(ROOT_DIR,'data','tj','raw','dataset_tjce_v1_trata_texto.csv.zip')
+
+    df = pd.read_csv(path)
+
+    df = df[df['tamanho_texto']>500]
+
+    cols = ['assuntoPrincipal','classe','documento_tipo','assunto_Hid','assunto','grupo','grupo_Hid','grupo_assunto','assunto_folha','texto_tratado']
+
+    df = df[cols]
+
+    return None

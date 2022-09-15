@@ -7,13 +7,17 @@ import torch_geometric.data as data
 import torch_geometric.transforms as T
 import torch.nn.functional as F
 import torch_geometric.utils as U
+from torch_geometric.loader import ClusterLoader,NeighborLoader,ShaDowKHopSampler,ClusterData
 
+import torch_sparse as S
+
+#from torch_sparse import coalesce 
 
 #from torch_geometric.data import Dataset
 from torch_geometric.data import InMemoryDataset
 from utils.definitions import ROOT_DIR
 
-class deep_graph(InMemoryDataset):
+class deeep_graph(InMemoryDataset):
     def __init__(self, root, name, transform=None, pre_transform=None):
         super(deep_graph,self).__init__(root, name, transform, pre_transform)
 
@@ -52,9 +56,8 @@ class deep_graph(InMemoryDataset):
     #    data = torch.load(os.path.join(self.processed_dir, f'data_{idx}.pt'))
     #    return data
 
-
-class deeep_graph():
-    def __init__(self,dataname:str,device):
+class deep_graph():
+    def __init__(self,dataname:str,batch_size:int):
 
         pathFile = os.path.join(ROOT_DIR,'data',dataname,'interm','graph.csv')
         rawData = pd.read_csv(pathFile,dtype={'src':str,'tgt':str,'weight':float,'labels':int,'split':str})
@@ -62,7 +65,12 @@ class deeep_graph():
         rawData2.rename(columns={'tgt':'tgt_','src':'tgt'},inplace=True)
         rawData2.rename(columns={'tgt_':'src'},inplace=True)
 
-        
+        rawData.dropna(inplace=True)
+        rawData2.dropna(inplace=True)
+
+        rawData2 = rawData2.sample(frac=1)
+        rawData = rawData.sample(frac=1)
+
         empty=[]
         np.testing.assert_array_equal(np.array(rawData2[(rawData2['src'].str.contains("doc_"))]['tgt']),np.array(empty))
 
@@ -73,6 +81,7 @@ class deeep_graph():
         dfSelfLoop = dfSelfLoop[['src','tgt','weight','labels','split']]
 
         rawData = pd.concat([rawData,rawData2],ignore_index=True)
+        #rawData = rawData.drop_duplicates()
         rawData = pd.concat([rawData.drop_duplicates(),dfSelfLoop],ignore_index=True)
 
         normalize = T.NormalizeFeatures(attrs=['edge_weight'])
@@ -123,12 +132,15 @@ class deeep_graph():
 
         srcNodesId = np.array([label2idNodes[idx] for idx in allNodesSrc.tolist()])
         tgtNodesId = np.array([label2idNodes[idx] for idx in allNodesTgt.tolist()])
-
-        oneHotMtx = np.zeros((allUniqueNodesId.size,allUniqueNodesId.size),dtype=np.int8)
-        oneHotMtx[np.arange(allUniqueNodesId.size),allUniqueNodesId] = 1
         edgeIndex = np.concatenate((np.expand_dims(srcNodesId,0),np.expand_dims(tgtNodesId,0)),axis=0)
 
-        oneHotMtx = torch.tensor(oneHotMtx,dtype=torch.float32)
+        edgeAttr = np.expand_dims(wgtEdges,0).T
+
+        oneHotMtx = S.SparseTensor.eye(M=len(allUniqueNodesId),dtype=torch.float32)
+        #oneHotMtx = oneHotMtx.to_dense()
+        #oneHotMtx = oneHotMtx.to_torch_sparse_coo_tensor()
+        #oneHotMtx = oneHotMtx.to_torch_sparse_coo_tensor()
+
         edgeIndex = torch.tensor(edgeIndex,dtype=torch.long)
         wgtEdges = torch.tensor(wgtEdges,dtype=torch.float32)
         labels = torch.tensor(labelToNodes,dtype=torch.long)
@@ -138,20 +150,49 @@ class deeep_graph():
 
         self.dataset = data.Data(x = oneHotMtx,
                                  edge_index = edgeIndex,
-                                 #edge_attr = ,
                                  edge_weight = wgtEdges,
+                                 #edge_attr = edgeAttr,
                                  y = labels,
+                                 #num_nodes = len(allUniqueNodesId), #novo
                                  num_classes = numClasses,
                                  test_mask = testMask,
                                  train_mask = trainMask,
-                                 val_mask = valMask).to(device)
-
-        #U.is_undirected(self.dataset.edge_index)
-        #U.contains_self_loops(self.dataset.edge_index)
-        #U.add_remaining_self_loops(self.dataset.edge_index)
-        #U.homophily(self.dataset.edge_index,y=self.dataset.y)
+                                 val_mask = valMask)
 
         #normalize(self.dataset)
-        #addSelfLoop(self.dataset)
 
-        #cu = self.dataset.edge_weight.cpu().detach().numpy()
+        #self.dataset.subgraph(train_mask)
+
+        self.ClusterLoaderTrain = ClusterLoader(ClusterData(self.dataset,num_parts=2,log=False), 
+                                                batch_size=batch_size, 
+                                                shuffle=True,
+                                                drop_last=False)
+
+        #self.graphLoaderTrain = NeighborLoader(self.dataset, 
+        #                                       num_neighbors=[20,20], 
+        #                                       input_nodes=self.dataset.train_mask,
+        #                                       batch_size=batch_size, 
+        #                                       directed=False,
+        #                                       #num_workers=10,
+        #                                       shuffle=True, 
+        #                                       drop_last=False)#,num_workers=16
+
+        #self.graphLoaderTest = NeighborLoader(self.dataset, 
+        #                                      num_neighbors=[20,20], 
+        #                                      input_nodes=self.dataset.test_mask,
+        #                                      batch_size=batch_size, 
+        #                                      directed=False,
+        #                                      #num_workers=10,
+        #                                      shuffle=True, 
+        #                                      drop_last=False)#,num_workers=16
+
+        #self.graphLoaderVal = NeighborLoader(self.dataset, 
+        #                                     num_neighbors=[20,20], 
+        #                                     input_nodes=self.dataset.val_mask,
+        #                                     batch_size=batch_size, 
+        #                                     directed=False,
+        #                                     #num_workers=10,
+        #                                     shuffle=True, 
+        #                                     drop_last=False)#,num_workers=16
+
+        
