@@ -84,7 +84,7 @@ class deep_graph():
         #rawData = rawData.drop_duplicates()
         rawData = pd.concat([rawData.drop_duplicates(),dfSelfLoop],ignore_index=True)
 
-        normalize = T.NormalizeFeatures(attrs=['edge_weight'])
+        #normalize = T.NormalizeFeatures(attrs=['edge_weight'])
         #addSelfLoop = T.GCNNorm()
 
         allNodesSrc = np.array(rawData['src'],dtype=str)
@@ -163,36 +163,38 @@ class deep_graph():
 
         #self.dataset.subgraph(train_mask)
 
-        self.ClusterLoaderTrain = ClusterLoader(ClusterData(self.dataset,num_parts=2,log=False), 
-                                                batch_size=batch_size, 
-                                                shuffle=True,
-                                                drop_last=False)
+        #self.ClusterLoaderTrain = ClusterLoader(ClusterData(self.dataset,num_parts=2,log=False), 
+        #                                        batch_size=batch_size, 
+        #                                        shuffle=True,
+        #                                        drop_last=False)
 
-        #self.graphLoaderTrain = NeighborLoader(self.dataset, 
-        #                                       num_neighbors=[20,20], 
-        #                                       input_nodes=self.dataset.train_mask,
-        #                                       batch_size=batch_size, 
-        #                                       directed=False,
-        #                                       #num_workers=10,
-        #                                       shuffle=True, 
-        #                                       drop_last=False)#,num_workers=16
+        self.graphLoaderTrain = ShaDowKHopSampler(self.dataset, 
+                                               depth=2, 
+                                               num_neighbors=5,
+                                               node_idx=self.dataset.train_mask,
+                                               batch_size = batch_size,
+                                               num_workers = 10,
+                                               persistent_workers = True,
+                                               shuffle=True, 
+                                               drop_last=False)#,num_workers=16
 
-        #self.graphLoaderTest = NeighborLoader(self.dataset, 
-        #                                      num_neighbors=[20,20], 
-        #                                      input_nodes=self.dataset.test_mask,
-        #                                      batch_size=batch_size, 
-        #                                      directed=False,
-        #                                      #num_workers=10,
-        #                                      shuffle=True, 
-        #                                      drop_last=False)#,num_workers=16
+        self.graphLoaderTest = ShaDowKHopSampler(self.dataset, 
+                                               depth=2, 
+                                               num_neighbors=20,
+                                               node_idx=self.dataset.test_mask,
+                                               batch_size = batch_size,
+                                               num_workers = 3,
+                                               persistent_workers = True,
+                                               shuffle=True, 
+                                               drop_last=False)#,num_workers=16
 
-        #self.graphLoaderVal = NeighborLoader(self.dataset, 
-        #                                     num_neighbors=[20,20], 
-        #                                     input_nodes=self.dataset.val_mask,
-        #                                     batch_size=batch_size, 
-        #                                     directed=False,
-        #                                     #num_workers=10,
-        #                                     shuffle=True, 
-        #                                     drop_last=False)#,num_workers=16
-
+        self.graphLoaderVal = ShaDowKHopSampler(self.dataset, 
+                                               depth=2, 
+                                               num_neighbors=20,
+                                               node_idx=self.dataset.val_mask,
+                                               batch_size = batch_size,
+                                               num_workers = 3,
+                                               persistent_workers = True,
+                                               shuffle=True, 
+                                               drop_last=False)#,num_workers=16
         

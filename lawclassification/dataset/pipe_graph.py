@@ -5,36 +5,40 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer,CountVectorizer
 import math
 from typing import List
-#from multiprocessing import Process, Manager
 from datetime import datetime
 import multiprocessing
-import itertools
 from tqdm.auto import tqdm
 import spacy
 import gc
 
-def _cross_words(vocabularyVec,npAggCount,rowIndicesList,totalWindows,idx,dicVocabTT,vocabTT,return_dict):
+
+def _cross_words(vocabularyVec,npAggCount,totalWindows,idx,return_dict,rowIndicesList,dicIdToVocabTT):
 
     wordWordList = []
 
-    for wordTuple in itertools.product(vocabularyVec, vocabTT):
+    for wordTuple in vocabularyVec:
 
-        rdx = dicVocabTT[wordTuple[0]]
-        cdx = dicVocabTT[wordTuple[1]]
+        rdx = wordTuple[0]
+        cdx = wordTuple[1]
+        wordR = dicIdToVocabTT[rdx]
+        wordC = dicIdToVocabTT[cdx]
 
         if rdx == cdx:
-            wordWordList.append([wordTuple[0],wordTuple[1],1,999,'wordword'])
+            wordWordList.append([wordR,wordC,1.0,999,'wordword'])
 
         #every thing that is rdx < cdx, will be a selfloop, 'car' -> 'dog' and 'dog' -> 'car'
         elif rdx > cdx:
 
-            indicesRowandCol = list(np.intersect1d(rowIndicesList[rdx],rowIndicesList[cdx]))
+            rowIndListR = rowIndicesList[rdx]
+            rowIndListC = rowIndicesList[cdx]
+
+            indicesRowandCol = list(np.intersect1d(rowIndListR,rowIndListC,assume_unique=True))
 
             #if indicesRowandCol is empty, pmi is log(0), so we try to calculate first, so we can skip some processing lines.
             if indicesRowandCol:
-                pmi = _calc_pmi(rdx,cdx,npAggCount,rowIndicesList,indicesRowandCol,totalWindows)
+                pmi = _calc_pmi(npAggCount,rowIndListR,rowIndListC,indicesRowandCol,totalWindows)
                 if pmi > 0:
-                    wordWordList.append([wordTuple[0],wordTuple[1],pmi,999,'wordword'])
+                    wordWordList.append([wordR,wordC,pmi,999,'wordword'])
 
     return_dict[idx]=wordWordList
 
@@ -54,15 +58,14 @@ def _split_listN(a, n):
     k, m = divmod(len(a), n)
     return (a[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n))
 
-def _calc_pmi(rdx:int,
-              cdx:int,
-              npAgg:np.array,
-              rowIndicesList:List,
+def _calc_pmi(npAgg:np.array,
+              rowIndListR:List,
+              rowIndListC:List,
               indicesRowandCol:List,
               totalWindows:np.int16) -> np.float16:
 
-    rowSumTT = np.sum(npAgg[rowIndicesList[rdx]])
-    colSumTT = np.sum(npAgg[rowIndicesList[cdx]])
+    rowSumTT = np.sum(npAgg[rowIndListR])
+    colSumTT = np.sum(npAgg[rowIndListC])
     rowColSumTT = np.sum(npAgg[indicesRowandCol])
 
     pRow = rowSumTT / totalWindows
@@ -81,7 +84,6 @@ def _tokenizer(text:str) -> str:
     #text = text[0:500] #~512 words
     newText = []
 
-    #slow:
     for word in NLP(text):
         if ((not word.is_stop or not word.is_punct) and (word.is_alpha and word.is_ascii and not word.is_digit)) or (word.text == 'pad__gcn'):
             newText.append(word.lemma_.lower())
@@ -249,28 +251,34 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     totalWindows = np.sum(npAggCount)
 
     dicVocabTT = {word:idx for idx,word in enumerate(vocabularyVec)}
+    dicIdToVocabTT = {idx:word for idx,word in enumerate(vocabularyVec)}
+
+    optimizeTTVocab = []
+    for indR,_ in enumerate(vocabularyVec):
+        for indC,_ in enumerate(vocabularyVec):
+            if indR >= indC:
+                optimizeTTVocab.append((indR,indC))
+
+    optimizeTTVocab = np.array(optimizeTTVocab,dtype=np.int32)
+
+    for _ in range(1):
+        #make sure each threads get the same amount of hard and easy problems.
+        np.random.shuffle(optimizeTTVocab) 
+
+    vocabThreads = list(_split_listN(optimizeTTVocab, nThreads))
 
     manager = multiprocessing.Manager()
     return_dict = manager.dict()
-
-    #vocabTT / vocabularyVec
-    #colocar somente palavras do vocabularyvec que tem ao menos 1 match com qualquer outra palavra (nao da, sem aumentar a complexidade)
-
-    #fazer um shuffle dentro do vocabthreadsa para as threads acabarem juntas
-
-    #for wordTuple in itertools.product(vocabularyVec, vocabTT): <-- checar se rodar isso, só fazendo append de quem de fato precisa ser calculado, fica lento
-    #gerar já os n sets, e desses n sets dividr em 16 pra calcular o pmi
 
     procs = []
     for idx,vocabVec in enumerate(vocabThreads):
         proc = multiprocessing.Process(target=_cross_words, args=(vocabVec,
                                                                   npAggCount,
-                                                                  rowIndicesList,
                                                                   totalWindows,
                                                                   idx,
-                                                                  dicVocabTT,
-                                                                  vocabularyVec,
                                                                   return_dict,
+                                                                  rowIndicesList,
+                                                                  dicIdToVocabTT,
                                                                   ))
         procs.append(proc)
         proc.start()
@@ -278,7 +286,6 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     for proc in procs:
         proc.join()
 
-    #checar se esse aqui precisa ta sort:
     wordWordList = [item for sublist in list(dict(sorted(return_dict.items())).values()) for item in sublist]
 
     manager.shutdown()
@@ -295,8 +302,6 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     np.testing.assert_array_equal(np.unique(dfWordWord['src']),np.unique(dfWordWord['tgt']))
 
     dfGraph.drop_duplicates(subset=['src','tgt'],inplace=True)
-
-    #dfGraph = dfGraph.sample(frac=1)
 
     dfGraph = dfGraph[(dfGraph['src']!='pad__gcn') & (dfGraph['tgt']!='pad__gcn')]
 

@@ -2,13 +2,6 @@ import torch
 from torch_geometric.nn import GCNConv
 import torch.nn.functional as F
 from dataset.dataset_graph import deep_graph
-import numpy as np
-from tqdm import tqdm
-from torch.nn import ModuleList
-
-from datetime import datetime
-
-
 
 class Text_GCN(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels):
@@ -19,8 +12,8 @@ class Text_GCN(torch.nn.Module):
         #    GCNConv(hidden_channels, out_channels,add_self_loops=False,normalize=False)]
         #)
 
-        self.conv1 = GCNConv(in_channels, hidden_channels,add_self_loops=False,normalize=False)
-        self.conv2 = GCNConv(hidden_channels, out_channels,add_self_loops=False,normalize=False)
+        self.conv1 = GCNConv(in_channels, hidden_channels)#,add_self_loops=False,normalize=False)
+        self.conv2 = GCNConv(hidden_channels, out_channels)#,add_self_loops=False,normalize=False)
 
     def forward(self, x, edge_index, edge_weight):
         #x = F.dropout(x, p=0.5, training=self.training)
@@ -40,7 +33,7 @@ def train(model,optimizer,loader,device):
 
         batch = batch.to(device)
         #debug:
-        print(batch)
+        #print(batch)
 
         optimizer.zero_grad()
 
@@ -49,7 +42,7 @@ def train(model,optimizer,loader,device):
         loss.backward()
         optimizer.step()
 
-        total_correct += int((out.argmax(dim=-1) == batch.y).sum())
+        total_correct += int((out[batch.train_mask].argmax(dim=-1) == batch.y[batch.train_mask]).sum())
         total_loss += float(loss) * len(batch.y[batch.train_mask])
         total_examples += len(batch.y[batch.train_mask])
 
@@ -87,6 +80,9 @@ def val(model,loader,device):
 def main(dataname:str,hidden_channels:int,lr:float,epochs:int) -> None:
 
     torch.cuda.empty_cache()
+    #print(torch.cuda.memory_summary())
+    #print(torch.cuda.memory_allocated())
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     graph = deep_graph(dataname,batch_size=1)
@@ -95,16 +91,22 @@ def main(dataname:str,hidden_channels:int,lr:float,epochs:int) -> None:
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
 
+    best_test = best_val = 0
+
     for epoch in range(1, epochs + 1):
 
         train_acc,loss = train(model,optimizer,graph.ClusterLoaderTrain,device)
         test_acc = test(model,graph.ClusterLoaderTrain,device)
         val_acc = val(model,graph.ClusterLoaderTrain,device)
 
-        print(f'Epoch: {epoch} Loss: {round(loss,4)} Train: {round(train_acc,4)} Val: {round(val_acc,4)} Test: {round(test_acc,4)}')
+        if test_acc > best_test:
+            best_test = test_acc
+            best_val = val_acc
+
+        print(f'Epoch: {epoch} Loss: {round(loss,4)} Train: {round(train_acc,4)} Val: {round(best_val,4)} Test: {round(best_test,4)}')
 
 if __name__ == '__main__':
-    main(dataname='twitter_chines',
+    main(dataname='r8_chines',
          hidden_channels=200,
          lr=0.02,
-         epochs=200)
+         epochs=500)
