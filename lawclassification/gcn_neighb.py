@@ -7,23 +7,12 @@ class Text_GCN(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels):
         super().__init__()
         self.conv1 = GCNConv(in_channels, hidden_channels, add_self_loops=False, normalize=False)
-        self.conv2 = GCNConv(hidden_channels, hidden_channels, add_self_loops=False, normalize=False)
-        self.conv3 = GCNConv(hidden_channels, hidden_channels, add_self_loops=False, normalize=False)
-        self.lin = torch.nn.Linear(2 * hidden_channels, out_channels)
+        self.conv2 = GCNConv(hidden_channels, out_channels, add_self_loops=False, normalize=False)
 
-    def forward(self, x, edge_index, edge_weight, batch, root_n_id):
+    def forward(self, x, edge_index, edge_weight):
         x = self.conv1(x, edge_index, edge_weight).relu()
         x = F.dropout(x, p=0.5)
-        x = self.conv2(x, edge_index, edge_weight).relu()
-        x = F.dropout(x, p=0.5, training=self.training)
-        x = self.conv3(x, edge_index, edge_weight).relu()
-        x = F.dropout(x, p=0.5, training=self.training)
-
-        # We merge both central node embeddings and subgraph embeddings:
-        #entender:
-        x = torch.cat([x[root_n_id], global_mean_pool(x, batch)], dim=-1)
-
-        x = self.lin(x)
+        x = self.conv2(x, edge_index, edge_weight)
 
         return x
 
@@ -40,14 +29,15 @@ def train(model,optimizer,loader,device):
 
         optimizer.zero_grad()
 
-        out = model(batch.x.to_torch_sparse_coo_tensor(), batch.edge_index, batch.edge_weight, batch.batch, batch.root_n_id)
-        loss = F.cross_entropy(out, batch.y)
+        y = batch.y[:batch.batch_size]
+        y_hat = model(batch.x, batch.edge_index, batch.edge_weight)[:batch.batch_size]
+        loss = F.cross_entropy(y_hat, y)
         loss.backward()
         optimizer.step()
 
-        total_correct += int((out.argmax(dim=-1) == batch.y).sum())
-        total_loss += float(loss) * len(batch.y)
-        total_examples += len(batch.y)
+        total_loss += float(loss) * batch.batch_size
+        total_correct += int((y_hat.argmax(dim=-1) == y).sum())
+        total_examples += batch.batch_size
 
     return total_correct / total_examples, total_loss / total_examples
 
@@ -60,14 +50,12 @@ def test(model,loader,device):
 
         for batch in loader:
             batch = batch.to(device)
-            out = model(batch.x.to_torch_sparse_coo_tensor(), batch.edge_index, batch.edge_weight, batch.batch, batch.root_n_id)
-            loss = F.cross_entropy(out, batch.y)
-
-            total_loss += float(loss) * len(batch.y)
+            #out = model(batch.x.to_torch_sparse_coo_tensor(), batch.edge_index, batch.edge_weight)
+            out = model(batch.x, batch.edge_index, batch.edge_weight)
             total_correct += int((out.argmax(dim=-1) == batch.y).sum())
             total_examples += len(batch.y)
         
-    return total_correct / total_examples, total_loss / total_examples
+    return total_correct / total_examples
 
 def val(model,loader,device):
 
@@ -77,7 +65,8 @@ def val(model,loader,device):
 
         for batch in loader:
             batch = batch.to(device)
-            out = model(batch.x.to_torch_sparse_coo_tensor(), batch.edge_index, batch.edge_weight, batch.batch, batch.root_n_id)
+            #out = model(batch.x.to_torch_sparse_coo_tensor(), batch.edge_index, batch.edge_weight)
+            out = model(batch.x, batch.edge_index, batch.edge_weight)
             total_correct += int((out.argmax(dim=-1) == batch.y).sum())
             total_examples += len(batch.y)
         
@@ -101,18 +90,18 @@ def main(dataname:str,hidden_channels:int,lr:float,epochs:int) -> None:
 
     for epoch in range(1, epochs + 1):
 
-        train_acc,train_loss = train(model,optimizer,graph.graphLoaderTrain,device)
-        test_acc,test_loss = test(model,graph.graphLoaderTest,device)
+        train_acc,loss = train(model,optimizer,graph.graphLoaderTrain,device)
+        test_acc = test(model,graph.graphLoaderTest,device)
         val_acc = test(model,graph.graphLoaderVal,device)
 
         if test_acc > best_test:
             best_test = test_acc
             best_val = val_acc
 
-        print(f'Epoch: {epoch} | Train Loss: {round(train_loss,4)} | Train: {round(train_acc,4)} | Val: {round(best_val,4)} | Test Loss: {round(test_loss,4)} | Test: {round(best_test,4)}')
+        print(f'Epoch: {epoch} Loss: {round(loss,4)} Train: {round(train_acc,4)} Val: {round(best_val,4)} Test: {round(best_test,4)}')
 
 if __name__ == '__main__':
-    main(dataname='r8_chines',
+    main(dataname='twitter_chines',
          hidden_channels=256,
-         lr=0.002,
+         lr=0.02,
          epochs=1000)

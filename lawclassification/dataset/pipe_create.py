@@ -1240,20 +1240,24 @@ def ohsumed_create(test_split:float,max_classes:int,max_row:int) -> None:
 
     #wget http://disi.unitn.it/moschitti/corpora/ohsumed-all-docs.tar.gz
 
-    path = os.path.join(ROOT_DIR,'data','ohsumed','raw','ohsumed-all')
+    path = os.path.join(ROOT_DIR,'data','ohsumed','raw','ohsumed-first-20000-docs')
+
+    pathSplit = ['training','test']
+
     fileContentList = []
-    for folder in os.listdir(path):
+    for splitsPath in pathSplit:
+        for folder in os.listdir(os.path.join(path,splitsPath)):
 
-        folderPath = os.path.join(ROOT_DIR,'data','ohsumed','raw','ohsumed-all',folder)
-        for file in os.listdir(folderPath):
+            folderPath = os.path.join(ROOT_DIR,'data','ohsumed','raw','ohsumed-first-20000-docs',splitsPath,folder)
+            for file in os.listdir(folderPath):
 
-            with open(os.path.join(folderPath,file), encoding='utf8') as f:
-                labelId = folder
-                contents = f.read()
-                fileContentList.append([labelId,contents])
-                f.close()
+                with open(os.path.join(folderPath,file), encoding='utf8') as f:
+                    labelId = folder
+                    contents = f.read()
+                    fileContentList.append([labelId,contents,splitsPath])
+                    f.close()
 
-    df = pd.DataFrame(fileContentList,columns=['labels','text'])
+    df = pd.DataFrame(fileContentList,columns=['labels','text','split'])
     
     df = df.sample(frac=1) # shuffle data
     df = df.head(max_row)

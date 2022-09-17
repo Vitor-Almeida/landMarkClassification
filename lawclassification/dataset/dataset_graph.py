@@ -57,7 +57,7 @@ class deeep_graph(InMemoryDataset):
     #    return data
 
 class deep_graph():
-    def __init__(self,dataname:str,batch_size:int):
+    def __init__(self,dataname:str,batch_size:int,device:str):
 
         pathFile = os.path.join(ROOT_DIR,'data',dataname,'interm','graph.csv')
         rawData = pd.read_csv(pathFile,dtype={'src':str,'tgt':str,'weight':float,'labels':int,'split':str})
@@ -76,7 +76,7 @@ class deep_graph():
 
         #add selfloops:
         dfSelfLoop = rawData2[(rawData2['tgt'].str.contains("doc_")) & (rawData2['split']!='wordword')][['tgt','labels','split']].drop_duplicates()
-        dfSelfLoop['weight'] = 1.0
+        dfSelfLoop['weight'] = 1.0 #try 0 here
         dfSelfLoop['src'] = dfSelfLoop['tgt']
         dfSelfLoop = dfSelfLoop[['src','tgt','weight','labels','split']]
 
@@ -138,7 +138,7 @@ class deep_graph():
 
         oneHotMtx = S.SparseTensor.eye(M=len(allUniqueNodesId),dtype=torch.float32)
         #oneHotMtx = oneHotMtx.to_dense()
-        #oneHotMtx = oneHotMtx.to_torch_sparse_coo_tensor()
+        oneHotMtx = oneHotMtx.to_torch_sparse_coo_tensor()
         #oneHotMtx = oneHotMtx.to_torch_sparse_coo_tensor()
 
         edgeIndex = torch.tensor(edgeIndex,dtype=torch.long)
@@ -153,48 +153,76 @@ class deep_graph():
                                  edge_weight = wgtEdges,
                                  #edge_attr = edgeAttr,
                                  y = labels,
-                                 #num_nodes = len(allUniqueNodesId), #novo
                                  num_classes = numClasses,
                                  test_mask = testMask,
                                  train_mask = trainMask,
                                  val_mask = valMask)
 
+        #bestBatchSize = len(allUniqueNodesId) / torch.mean(U.degree(self.dataset.edge_index[0]))
+
         #normalize(self.dataset)
 
-        #self.dataset.subgraph(train_mask)
+        #self.graphLoaderValTest = self.dataset.subgraph(self.dataset.val_mask+self.dataset.test_mask).to(device)
 
         #self.ClusterLoaderTrain = ClusterLoader(ClusterData(self.dataset,num_parts=2,log=False), 
         #                                        batch_size=batch_size, 
         #                                        shuffle=True,
         #                                        drop_last=False)
 
-        self.graphLoaderTrain = ShaDowKHopSampler(self.dataset, 
-                                               depth=2, 
-                                               num_neighbors=5,
-                                               node_idx=self.dataset.train_mask,
-                                               batch_size = batch_size,
-                                               num_workers = 10,
-                                               persistent_workers = True,
-                                               shuffle=True, 
-                                               drop_last=False)#,num_workers=16
+        #self.graphLoaderTrain = NeighborLoader(self.dataset, 
+        #                                       num_neighbors=[20,5],
+        #                                       input_nodes=self.dataset.train_mask,
+        #                                       batch_size = batch_size,
+        #                                       #num_workers = 10,
+        #                                       #persistent_workers = True,
+        #                                       shuffle=True, 
+        #                                       drop_last=False)#,num_workers=16
 
-        self.graphLoaderTest = ShaDowKHopSampler(self.dataset, 
-                                               depth=2, 
-                                               num_neighbors=20,
-                                               node_idx=self.dataset.test_mask,
-                                               batch_size = batch_size,
-                                               num_workers = 3,
-                                               persistent_workers = True,
-                                               shuffle=True, 
-                                               drop_last=False)#,num_workers=16
+        #self.graphLoaderTest = NeighborLoader(self.dataset, 
+        #                                       num_neighbors=[20,5],
+        #                                       input_nodes=self.dataset.test_mask,
+        #                                       batch_size = batch_size,
+        #                                       #num_workers = 3,
+        #                                       #persistent_workers = True,
+        #                                       shuffle=True, 
+        #                                       drop_last=False)#,num_workers=16
 
-        self.graphLoaderVal = ShaDowKHopSampler(self.dataset, 
-                                               depth=2, 
-                                               num_neighbors=20,
-                                               node_idx=self.dataset.val_mask,
-                                               batch_size = batch_size,
-                                               num_workers = 3,
-                                               persistent_workers = True,
-                                               shuffle=True, 
-                                               drop_last=False)#,num_workers=16
+        #self.graphLoaderVal = NeighborLoader(self.dataset, 
+        #                                       num_neighbors=[20,5],
+        #                                       input_nodes=self.dataset.val_mask,
+        #                                       batch_size = batch_size,
+        #                                       #num_workers = 3,
+        #                                       #persistent_workers = True,
+        #                                       shuffle=True, 
+        #                                       drop_last=False)#,num_workers=16
+
+        #self.graphLoaderTrain = ShaDowKHopSampler(self.dataset, 
+        #                                          depth=2, 
+        #                                          num_neighbors=10,
+        #                                          node_idx=self.dataset.train_mask,
+        #                                          batch_size = batch_size,
+        #                                          num_workers = 10,
+        #                                          persistent_workers = True,
+        #                                          shuffle=True, 
+        #                                          drop_last=False)#,num_workers=16
+
+        #self.graphLoaderTest = ShaDowKHopSampler(self.dataset, 
+        #                                         depth=2, 
+        #                                         num_neighbors=10,
+        #                                         node_idx=self.dataset.test_mask,
+        #                                         batch_size = batch_size,
+        #                                         num_workers = 3,
+        #                                         persistent_workers = True,
+        #                                         shuffle=True, 
+        #                                         drop_last=False)#,num_workers=16
+
+        #self.graphLoaderVal = ShaDowKHopSampler(self.dataset, 
+        #                                        depth=2, 
+        #                                        num_neighbors=10,
+        #                                        node_idx=self.dataset.val_mask,
+        #                                        batch_size = batch_size,
+        #                                        num_workers = 3,
+        #                                        persistent_workers = True,
+        #                                        shuffle=True, 
+        #                                        drop_last=False)#,num_workers=16
         

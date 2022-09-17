@@ -6,18 +6,20 @@ from sklearn.feature_extraction.text import TfidfVectorizer,CountVectorizer
 import math
 from typing import List
 from datetime import datetime
+import random
 import multiprocessing
 from tqdm.auto import tqdm
 import spacy
+import itertools
 import gc
 
 
-def _cross_words(vocabularyVec,npAggCount,totalWindows,idx,return_dict,rowIndicesList,dicIdToVocabTT):
+def _cross_words(vocabularyVec,vocabularyVecIndicesTT,npAggCount,totalWindows,idx,return_dict,rowIndicesList,dicIdToVocabTT):
 
     wordWordList = []
 
-    for wordTuple in vocabularyVec:
-
+    for wordTuple in itertools.product(vocabularyVec,vocabularyVecIndicesTT):
+    
         rdx = wordTuple[0]
         cdx = wordTuple[1]
         wordR = dicIdToVocabTT[rdx]
@@ -136,7 +138,7 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     n     | something something ...
     '''
 
-    count_vector = CountVectorizer(tokenizer = _tokenizer,
+    count_vector = CountVectorizer(#tokenizer = _tokenizer,
                                 #stop_words = 'english', 
                                 #sublinear_tf = True, 
                                 ngram_range=(windowSize,windowSize),
@@ -150,7 +152,7 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
                                 max_features = None, #numero maximo de features
                                 vocabulary = None)
 
-    tfidf_vector = TfidfVectorizer(tokenizer = _tokenizer,
+    tfidf_vector = TfidfVectorizer(#tokenizer = _tokenizer,
                                 #stop_words = 'english', 
                                 #sublinear_tf = True, 
                                 ngram_range=(1,1),
@@ -215,7 +217,7 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     print("Current Time Multi-thread:", datetime.now().strftime("%H:%M:%S"))
     #################################### multi thread: ###############################################
 
-    nThreads = 16
+    nThreads = 12
     vocabThreads = list(_split_listN(list(vocabularyVec), nThreads))
 
     dicOrder = {}
@@ -247,25 +249,28 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     del vocabularyWindow
     gc.collect()
 
-    #################################### multi thread: #############################################
     totalWindows = np.sum(npAggCount)
 
     dicVocabTT = {word:idx for idx,word in enumerate(vocabularyVec)}
     dicIdToVocabTT = {idx:word for idx,word in enumerate(vocabularyVec)}
 
-    optimizeTTVocab = []
-    for indR,_ in enumerate(vocabularyVec):
-        for indC,_ in enumerate(vocabularyVec):
-            if indR >= indC:
-                optimizeTTVocab.append((indR,indC))
+    #optimizeTTVocab = []
+    #for indR,_ in enumerate(vocabularyVec):
+    #    for indC,_ in enumerate(vocabularyVec):
+    #        if indR >= indC:
+    #            optimizeTTVocab.append((indR,indC))
 
-    optimizeTTVocab = np.array(optimizeTTVocab,dtype=np.int32)
+    #optimizeTTVocab = np.array(optimizeTTVocab,dtype=np.int32)
 
-    for _ in range(1):
+    for _ in range(3):
         #make sure each threads get the same amount of hard and easy problems.
-        np.random.shuffle(optimizeTTVocab) 
+        random.shuffle(vocabularyVec)
 
-    vocabThreads = list(_split_listN(optimizeTTVocab, nThreads))
+    vocabularyVecIndicesTT = [dicVocabTT[word] for word in vocabularyVec]
+
+    #################################### multi thread: #############################################
+
+    vocabThreads = list(_split_listN(vocabularyVecIndicesTT, nThreads))
 
     manager = multiprocessing.Manager()
     return_dict = manager.dict()
@@ -273,6 +278,7 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     procs = []
     for idx,vocabVec in enumerate(vocabThreads):
         proc = multiprocessing.Process(target=_cross_words, args=(vocabVec,
+                                                                  vocabularyVecIndicesTT,
                                                                   npAggCount,
                                                                   totalWindows,
                                                                   idx,

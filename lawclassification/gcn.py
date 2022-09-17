@@ -108,5 +108,5 @@ def main(dataname:str,hidden_channels:int,lr:float,epochs:int) -> None:
 if __name__ == '__main__':
     main(dataname='r8_chines',
          hidden_channels=200,
-         lr=0.02,
+         lr=0.002,
          epochs=500)
