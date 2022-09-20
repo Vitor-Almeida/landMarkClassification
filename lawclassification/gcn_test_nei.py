@@ -12,20 +12,25 @@ from torch_geometric.datasets import Reddit
 import torch_sparse as S
 
 from dataset.dataset_graph import deep_graph
+import pickle
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 #path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', 'Reddit')
 #dataset = Reddit(path)
 
-dataset = deep_graph('ag_chines',4096,device)
+#dataset = deep_graph('ohsumed',4096,device)
+
+f = open('/home/jaco/Projetos/landMarkClassification/data/r8_chines/pygraph.pickle','rb')
+dataset = pickle.load(f).to(device)
+f.close()
 
 # Already send node features/labels to GPU for faster access during sampling:
-data = dataset.dataset.to(device)#, 'x', 'y')
+data = dataset.to(device)#, 'x', 'y')
 
-kwargs = {'batch_size': 4096}#, 'num_workers': 6, 'persistent_workers': True}
+kwargs = {'batch_size': 128}#, 'num_workers': 6, 'persistent_workers': True}
 train_loader = NeighborLoader(data, input_nodes=data.train_mask,
-                              num_neighbors=[-1, 10], shuffle=True, **kwargs)
+                              num_neighbors=[-1, -1], shuffle=True, **kwargs)
 
 subgraph_loader = NeighborLoader(copy.copy(data), input_nodes=None,
                                  num_neighbors=[-1], shuffle=False, **kwargs)
@@ -81,7 +86,7 @@ class SAGE(torch.nn.Module):
         return x_all
 
 
-model = SAGE(dataset.dataset.num_features, 256, dataset.dataset.num_classes).to(device)
+model = SAGE(dataset.num_features, 256, dataset.num_classes).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.02)
 
 
