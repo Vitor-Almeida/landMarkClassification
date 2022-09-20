@@ -87,8 +87,9 @@ def _tokenizer(text:str) -> str:
     newText = []
 
     for word in NLP(text):
-        if ((not word.is_stop or not word.is_punct) and (word.is_alpha and word.is_ascii and not word.is_digit)) or (word.text == 'pad__gcn'):
-            newText.append(word.lemma_.lower())
+        #if ((not word.is_stop or not word.is_punct) and (word.is_alpha and word.is_ascii and not word.is_digit)) or (word.text == 'pad__gcn'):
+        if ((not word.is_punct) and (word.is_alpha and word.is_ascii and not word.is_digit)) or (word.text == 'pad__gcn'):
+            newText.append(word.text.lower())
 
     return newText
 
@@ -138,7 +139,7 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
     n     | something something ...
     '''
 
-    count_vector = CountVectorizer(#tokenizer = _tokenizer,
+    count_vector = CountVectorizer(tokenizer = _tokenizer,
                                 #stop_words = 'english', 
                                 #sublinear_tf = True, 
                                 ngram_range=(windowSize,windowSize),
@@ -152,7 +153,7 @@ def create_graph(path: str,maxRows: int, windowSize:int) -> None:
                                 max_features = None, #numero maximo de features
                                 vocabulary = None)
 
-    tfidf_vector = TfidfVectorizer(#tokenizer = _tokenizer,
+    tfidf_vector = TfidfVectorizer(tokenizer = _tokenizer,
                                 #stop_words = 'english', 
                                 #sublinear_tf = True, 
                                 ngram_range=(1,1),
