@@ -101,7 +101,7 @@ def main(dataname:str,hidden_channels:int,lr:float,epochs:int) -> None:
         print(f'Epoch: {epoch} Loss: {round(loss,4)} Train: {round(train_acc,4)} Val: {round(best_val,4)} Test: {round(best_test,4)}')
 
 if __name__ == '__main__':
-    main(dataname='twitter_chines',
+    main(dataname='r8_chines',
          hidden_channels=256,
          lr=0.02,
          epochs=1000)

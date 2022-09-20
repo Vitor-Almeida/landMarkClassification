@@ -22,18 +22,20 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 #dataset = deep_graph('ohsumed',4096,device)
 
 f = open('/home/jaco/Projetos/landMarkClassification/data/r8_chines/pygraph.pickle','rb')
-dataset = pickle.load(f).to(device)
+dataset = pickle.load(f)
 f.close()
 
 # Already send node features/labels to GPU for faster access during sampling:
 data = dataset.to(device)#, 'x', 'y')
 
-kwargs = {'batch_size': 128}#, 'num_workers': 6, 'persistent_workers': True}
+kwargs = {'batch_size': 256}#, 'num_workers': 6, 'persistent_workers': True}
 train_loader = NeighborLoader(data, input_nodes=data.train_mask,
-                              num_neighbors=[-1, -1], shuffle=True, **kwargs)
+                              num_neighbors=[-1, 10], shuffle=True, **kwargs)
 
 subgraph_loader = NeighborLoader(copy.copy(data), input_nodes=None,
                                  num_neighbors=[-1], shuffle=False, **kwargs)
+
+next(iter(subgraph_loader))
 
 # No need to maintain these features during evaluation:
 del subgraph_loader.data.x, subgraph_loader.data.y

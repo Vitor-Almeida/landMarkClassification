@@ -27,8 +27,9 @@ def main():
     #graph.create_graph(path='twitter_chines',maxRows=1000000,windowSize=20)
     #pipe.tj(test_split=0.2,max_classes=10,max_rows=1000000,selected_col='cu')
 
-    #fastGraph.fast_pipe_graph(path='twitter_chines',maxRows=1000000,windowSize=20,nThreads=10)
+    fastGraph.fast_pipe_graph(path='twitter_chines',maxRows=1000000,windowSize=20,nThreads=16)
     fastGraph.fast_pipe_graph(path='r8_chines',maxRows=1000000,windowSize=20,nThreads=16)
+    fastGraph.fast_pipe_graph(path='ohsumed',maxRows=1000000,windowSize=20,nThreads=16)
 
     
 if __name__ == '__main__':

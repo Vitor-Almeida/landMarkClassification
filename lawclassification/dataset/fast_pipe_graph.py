@@ -1,7 +1,6 @@
 import pandas as pd
 from utils.definitions import ROOT_DIR
 import os
-import spacy
 from sklearn.feature_extraction.text import TfidfVectorizer
 import numpy as np
 from collections import Counter
@@ -11,9 +10,13 @@ from datetime import datetime
 import gc
 import torch
 import torch_sparse as S
-from tqdm.auto import tqdm
 import pickle
-from psutil import Process
+from tokenizers import Tokenizer
+from tokenizers import pre_tokenizers
+from tokenizers import normalizers
+from tokenizers.models import WordPiece
+from tokenizers.processors import TemplateProcessing
+from tokenizers.trainers import WordPieceTrainer
 
 def _split_listN(a, n):
     '''split an array in n equal parts
@@ -21,42 +24,46 @@ def _split_listN(a, n):
     k, m = divmod(len(a), n)
     return (a[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n))
 
-def _load_csv(path: str, maxRows: int, windowSize: int) -> pd.DataFrame:
+def _tokenizer(df:pd.DataFrame, vocab_size:int):
+
+    bertTokenizer = Tokenizer(WordPiece(unk_token="[UNK]"))
+    bertTokenizer.normalizer = normalizers.Sequence([normalizers.NFD(), normalizers.Lowercase(), normalizers.StripAccents()])
+    bertTokenizer.pre_tokenizer = pre_tokenizers.Sequence([pre_tokenizers.Punctuation('removed'),pre_tokenizers.Whitespace()])
+
+    bertTokenizer.post_processor = TemplateProcessing(
+        single="[CLS] $A [SEP]",
+        pair="[CLS] $A [SEP] $B:1 [SEP]:1",
+        special_tokens=[
+            ("[CLS]", 1),
+            ("[SEP]", 2),
+        ],
+    )
+
+    trainer = WordPieceTrainer(
+        vocab_size = vocab_size, 
+        #special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"],
+        special_tokens=[],
+        min_frequency = 0, 
+        show_progress = True, 
+        initial_alphabet  = [],
+        #continuing_subword_prefix = '##'
+        continuing_subword_prefix = ''
+    )
+
+    bertTokenizer.train_from_iterator(df['text'], trainer=trainer)
+
+    vocabToId = bertTokenizer.get_vocab()
+    vocabVec = list(bertTokenizer.get_vocab().keys())
+    idToVocab = {idx:label for label,idx in vocabToId.items()}
+
+    encodedText = df['text'].apply(lambda row: bertTokenizer.encode(row,add_special_tokens=False).ids)
+
+    return encodedText, [vocabVec,vocabToId,idToVocab]
+
+
+def _load_csv(path: str, maxRows: int) -> pd.DataFrame:
     '''load split csv file from other the deep/xgboost pipe and get ready for the graph pipe
     '''
-
-    NLP = spacy.load('en_core_web_lg')
-
-    def _fix_padding(row):
-        '''pad documents that have setences that are smaller than windowsSize
-        '''
-
-        if len(row.split()) < windowSize:
-
-            #todo, fazer o multiplo, nao perder frase
-            tokenizerSafeMargin = 5 #different tokenizers might count different, so we put a safe margin
-
-            padding = ['pad__gcn']*((windowSize - len(row.split())) + tokenizerSafeMargin)
-            padding = ' '.join(padding)
-            row = row + ' ' + padding
-
-        return row
-
-    def _light_tokenizer(row):
-        '''light tokenizer to not affect the learning models, but try to make the graphs smallers'''
-
-        newText = []
-        #row = row[0:4000] #restringir o tamanho do texto
-
-        #usar o tokenizador do legal bert, deixar em paralelo:
-        #criar coluna nova no pre_csv já com o texto tokenizado.
-
-        for word in NLP(row):
-            if ((not word.is_stop or not word.is_punct) and (word.is_alpha and word.is_ascii and not word.is_digit)) or (word.text == 'pad__gcn'):
-            #if ((not word.is_punct) and (word.is_alpha and word.is_ascii and not word.is_digit)) or (word.text == 'pad__gcn'):
-                newText.append(word.text.lower())
-
-        return ' '.join(newText)
 
     dfTrain = pd.read_csv(os.path.join(ROOT_DIR,'data',path,'interm','train','train.csv'))
     dfTrain['split'] = 'train'
@@ -67,40 +74,43 @@ def _load_csv(path: str, maxRows: int, windowSize: int) -> pd.DataFrame:
 
     df = pd.concat([dfTrain,dfTest,dfVal],ignore_index=True)
 
-    #df['text'] = df['text'].apply(_light_tokenizer)
-    df['text'] = df['text'].apply(_fix_padding)
+    df['text_token'],vocabMaps = _tokenizer(df,vocab_size=30522)
     
     df = df.head(maxRows)
     df.reset_index(inplace=True,drop=True)
 
     df.to_csv(os.path.join(ROOT_DIR,'data',path,'interm','pre_graph.csv'),index=False)
 
-    return df
+    return df, vocabMaps
 
-def _get_worddocGraph(df:pd.DataFrame,nThreads:int):
+def _get_worddocGraph(df:pd.DataFrame,nThreads:int, vocabMaps):
 
     '''building vocab and windows (ngrams) using sklearn functions, so it's more readible
     '''
 
+    vocabularyVec = vocabMaps[0]
+    vocabToId = vocabMaps[1]
+    idToVocab = vocabMaps[2]
+
+    def dummytfidf(doc):
+        return doc
+
     #pode existir tokens (nodes) que so existe na aresta doc -> word, nao tem na word, word (fazer um teste)
 
-    tfidfVector = TfidfVectorizer(ngram_range=(1,1),
-                                  lowercase = True,
-                                  #strip_accents = 'unicode',
-                                  #encoding = 'utf-8',
-                                  #decode_error = 'strict',
-                                  #max_df = 1.0, #tirar 'outliers' palavras muito repetidas entre documentos
-                                  #min_df = 1, #tirar 'outliers' palavras muito raras entre documentos#'cut-off'
+    tfidfVector = TfidfVectorizer(#ngram_range=(1,1),
                                   dtype = np.float32,
-                                  max_features = None, #numero maximo de features
-                                  vocabulary = None)
+                                  preprocessor=dummytfidf,
+                                  tokenizer=dummytfidf,
+                                  token_pattern=None)
 
-    tfidfMatrix = tfidfVector.fit_transform(df['text'])
+    tfidfMatrix = tfidfVector.fit_transform(df['text_token'])
 
-    vocabularyVec = tfidfVector.get_feature_names_out().astype('U')
+    #vocabularyVec = tfidfVector.get_feature_names_out().astype('U')
 
-    vocabToId = {label:idx for idx, label in enumerate(vocabularyVec)}
-    idToVocab = {idx:label for idx, label in enumerate(vocabularyVec)}
+    tfidfColToVocab = {pair[1]:pair[0] for pair in tfidfVector.vocabulary_.items()}
+
+    #vocabToId = {label:idx for idx, label in enumerate(vocabularyVec)}
+    #idToVocab = {idx:label for idx, label in enumerate(vocabularyVec)}
     docToLabel = {idx:label for idx, label in enumerate(df['labels'])}
     docToSplit = {idx:label for idx, label in enumerate(df['split'])}
 
@@ -111,8 +121,7 @@ def _get_worddocGraph(df:pd.DataFrame,nThreads:int):
     wordDocDf = wordDocDf.astype(dfTypeDic)
 
     wordDocDf['src'] = 'doc_'+wordDocDf['src'].astype(np.str_)
-    wordDocDf['tgt'] = wordDocDf['tgt'].apply(lambda row: idToVocab[row])
-    wordDocDf = wordDocDf[wordDocDf['tgt']!='pad__gcn']
+    wordDocDf['tgt'] = wordDocDf['tgt'].apply(lambda row: idToVocab[tfidfColToVocab[row]])
 
     #add symmetric adj matrix
     _wordDocDf = wordDocDf.copy(deep=False)
@@ -120,7 +129,7 @@ def _get_worddocGraph(df:pd.DataFrame,nThreads:int):
     _wordDocDf.rename(columns={'tgt':'src'},inplace=True)
     _wordDocDf.rename(columns={'src_':'tgt'},inplace=True)
 
-    wordDocDf = pd.concat([wordDocDf,_wordDocDf],ignore_index=True).drop_duplicates()
+    wordDocDf = pd.concat([wordDocDf,_wordDocDf],ignore_index=True)
 
     #add selfloop
     dfSelfLoop = wordDocDf[(wordDocDf['src'].str.contains("doc_"))][['src','label','splits']].drop_duplicates()
@@ -131,26 +140,15 @@ def _get_worddocGraph(df:pd.DataFrame,nThreads:int):
 
     wordDocDf = pd.concat([wordDocDf,dfSelfLoop],ignore_index=True)
 
-    docsArr = df['text'].to_list()
-    vocDocsArr = []
+    docsArr = df['text_token'].to_list()
 
-    for docs in tqdm(docsArr):
-        docToken = docs.split()
-        #docToken = [vocabToId[word] for word in docToken if word in vocabularyVec] #<--slow
-        #docToken = np.array([vocabToId[word.lower()] for word in docToken if word.lower() in vocabularyVec],dtype=np.int32) #<--slow
-        #docToken = np.array([vocabToId[word.lower()] for word in docToken if vocabToId.get(word.lower()) != None],dtype=np.int32) #<--slow
-        docToken = [vocabToId[word.lower()] for word in docToken if vocabToId.get(word.lower()) != None] #<--slow
-        #docToken = np.delete(docToken, np.where(docToken == -1))
-        #docToken = np.array([vocabToId[word] for word in docToken],dtype=np.int32)
-        vocDocsArr.append(docToken)
-
-    vocDocsArr = _split_listN(vocDocsArr,nThreads)
+    vocDocsArr = _split_listN(docsArr,nThreads)
 
     print('num of chars :', sum(len(s) for s in df['text']))
     print('Nvocab: ',len(vocabularyVec))
     print('numDocs: ',len(df['text']))
     
-    return vocDocsArr, wordDocDf, [vocabToId,idToVocab]
+    return vocDocsArr, wordDocDf
 
 def _dic_sum(dicOri,dicSum):
 
@@ -174,7 +172,12 @@ def _co_corrence_build(docsArr, windowSize, processNum, returnDict):
 
     for doc in docsArr:
 
-        for idx in range(len(doc) - windowSize + 1):
+        if len(doc) < windowSize:
+            wRange = range(0,1)
+        else:
+            wRange = range(len(doc) - windowSize + 1)
+
+        for idx in wRange:
 
             curWindow = doc[idx: idx + windowSize]
 
@@ -215,7 +218,7 @@ def _parallel_load(docsArrThread, windowSize, vocabMaps):
         proc.join()
 
 
-    idToVocab=vocabMaps[1]
+    idToVocab=vocabMaps[2]
     windowQty = 0
 
     edgeList=[]
@@ -225,6 +228,7 @@ def _parallel_load(docsArrThread, windowSize, vocabMaps):
         for sdx, subDic in dic.items():
             for rdx, qty in subDic.items():
                 edgeList.append([sdx,rdx,qty])
+                
 
     manager.shutdown()
 
@@ -245,22 +249,20 @@ def _parallel_load(docsArrThread, windowSize, vocabMaps):
     singleOccrDf.rename(columns={'src':'tgt'},inplace=True)
     singleOccrDf.rename(columns={'qtyTTsrc':'qtyTTtgt'},inplace=True)
     edgeDf = edgeDf.merge(singleOccrDf,how='inner',on='tgt')
-
+    
     edgeDf['weight'] = np.log(edgeDf['qty']/windowQty / (edgeDf['qtyTTsrc']/windowQty*edgeDf['qtyTTtgt']/windowQty)) ##pq os weights aumentaram? e estao sem uma boa distribuição?
     edgeDf.loc[edgeDf['src']==edgeDf['tgt'], 'weight'] = 1.0
     edgeDf = edgeDf[edgeDf['weight']>0]
-    edgeDf = edgeDf[(edgeDf['src']!='pad__gcn')]
-    edgeDf = edgeDf[(edgeDf['tgt']!='pad__gcn')]
-
+    
     edgeDf = edgeDf[['src','tgt','weight']]
 
-    #add adj symmetric:
-    _edgeDf = edgeDf.copy(deep=False)
-    _edgeDf.rename(columns={'src':'src_'},inplace=True)
-    _edgeDf.rename(columns={'tgt':'src'},inplace=True)
-    _edgeDf.rename(columns={'src_':'tgt'},inplace=True)
+    #add adj symmetric: já é simetrico.
+    #_edgeDf = edgeDf.copy(deep=True)
+    #_edgeDf.rename(columns={'src':'src_'},inplace=True)
+    #_edgeDf.rename(columns={'tgt':'src'},inplace=True)
+    #_edgeDf.rename(columns={'src_':'tgt'},inplace=True)
 
-    edgeDf = pd.concat([edgeDf,_edgeDf],ignore_index=True).drop_duplicates()
+    #edgeDf = pd.concat([edgeDf,_edgeDf],ignore_index=True).drop_duplicates()
 
     edgeDf['label'] = 999
     edgeDf['splits'] = 'wordword'
@@ -271,18 +273,21 @@ def _parallel_load(docsArrThread, windowSize, vocabMaps):
 
 def _create_edge_df(path: str, maxRows: int, windowSize: int, nThreads:int) -> pd.DataFrame:
 
-    if not os.path.exists(os.path.join(ROOT_DIR,'data',path,'interm','pre_graph.csv')):
-        df = _load_csv(path,maxRows,windowSize)
-    else:
-        df = pd.read_csv(os.path.join(ROOT_DIR,'data',path,'interm','pre_graph.csv'))
+    #if not os.path.exists(os.path.join(ROOT_DIR,'data',path,'interm','pre_graph.csv')):
+    df, vocabMaps = _load_csv(path,maxRows)
+    #else:
+    #    df = pd.read_csv(os.path.join(ROOT_DIR,'data',path,'interm','pre_graph.csv'))
+        #FAZER
+        #vocabVec = 
 
-    docsArr, wordDocDf, vocabMaps = _get_worddocGraph(df,nThreads)
+    docsArr, wordDocDf = _get_worddocGraph(df,nThreads,vocabMaps)
 
-    print("Begin parallel =", datetime.now().strftime("%H:%M:%S"))
     edgeDf = _parallel_load(docsArr,windowSize, vocabMaps)
-    print("end parallel =", datetime.now().strftime("%H:%M:%S"))
 
     graphDf = pd.concat([edgeDf,wordDocDf],ignore_index=True)
+
+    #todo:
+    #tirando palavras do TFIDF (doc-word), pois não existem no word->word, por causa de um possivel pmi = 0 ou pmi < 0 (olhar.)
 
     return graphDf
 
@@ -291,7 +296,8 @@ def _create_pygraph_data(graphDf:pd.DataFrame) -> None:
     graphDf = graphDf.sample(frac=1)
     graphDf.dropna(inplace=True) #pode ter algum termo como #N/A como token?
 
-    _graphDf = graphDf.copy(deep=True) #precisa mesmo?
+    #removing selfloops and symmetry
+    _graphDf = graphDf[(graphDf['src']!=graphDf['tgt'])]
     _graphDf = _graphDf[~((_graphDf['tgt'].str.contains("doc_")))][['src','label','splits']].drop_duplicates() #bad
 
     allNodesSrc = np.array(graphDf['src'],dtype=np.str_)
@@ -341,7 +347,7 @@ def _create_pygraph_data(graphDf:pd.DataFrame) -> None:
     tgtNodesId = np.array([label2idNodes[idx] for idx in allNodesTgt.tolist()])
     edgeIndex = np.concatenate((np.expand_dims(srcNodesId,0),np.expand_dims(tgtNodesId,0)),axis=0)
 
-    edgeAttr = np.expand_dims(wgtEdges,0).T
+    #edgeAttr = np.expand_dims(wgtEdges,0).T
 
     oneHotMtx = S.SparseTensor.eye(M=len(allUniqueNodesId),dtype=torch.float32)
     #oneHotMtx = oneHotMtx.to_dense()
