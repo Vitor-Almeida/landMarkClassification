@@ -8,6 +8,7 @@ import os
 from utils.definitions import ROOT_DIR
 from transformers import logging
 import re
+from utils.helper_funs import EarlyStopping
 
 def set_learning_rates(base_lr,decay_lr,model,weight_decay,qtyFracLayers):
 
@@ -154,11 +155,13 @@ class deep_models():
         self.train_dataloader = DataLoader(dataset = self.dataset_train,
                                            batch_size = self.batchsize,
                                            shuffle = True,
-                                           drop_last=True)
+                                           drop_last = True)
 
         self.test_dataloader = DataLoader(dataset = self.dataset_test,
                                           batch_size = self.batchsize,
                                           drop_last = True)
+
+        self.earlyStopper = EarlyStopping(patience=3, min_delta=0)                                  
         
         self.num_labels_train = self.dataset_train.num_labels
         self.num_labels_test = self.dataset_test.num_labels
@@ -234,8 +237,6 @@ class deep_models():
 
             if current_step < num_warmup_steps:
                 return float(current_step) / float(max(1, num_warmup_steps))
-            return max(
-                0.0, float(num_training_steps - current_step) / float(max(1, num_training_steps - num_warmup_steps))
-        )
+            return max(0.0, float(num_training_steps - current_step) / float(max(1, num_training_steps - num_warmup_steps)))
 
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer,lr_lambda,last_epoch=-1)

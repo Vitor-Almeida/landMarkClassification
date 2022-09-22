@@ -2,6 +2,8 @@ import torch
 from torch_geometric.nn import GCNConv
 import torch.nn.functional as F
 import torch_sparse as S
+import random
+import numpy as np
 
 class Text_GCN(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, device):
@@ -10,6 +12,12 @@ class Text_GCN(torch.nn.Module):
         self.convs.append(GCNConv(in_channels, hidden_channels, add_self_loops=False, normalize=False))
         self.convs.append(GCNConv(hidden_channels, out_channels, add_self_loops=False, normalize=False))
         self.device = device
+
+        self.seedVal = random.randint(0, 1000)
+        random.seed(self.seedVal)
+        np.random.seed(self.seedVal)
+        torch.manual_seed(self.seedVal)
+        torch.cuda.manual_seed_all(self.seedVal)
 
     def forward(self, x, edge_index, edge_weight):
         for i, conv in enumerate(self.convs):
@@ -37,6 +45,7 @@ class Text_GCN(torch.nn.Module):
                     x = conv(x, batch.edge_index.to(self.device), batch.edge_weight.to(self.device))
                     if i < len(self.convs) - 1:
                         x = x.relu_()
+
                     xs.append(x[:batch.batch_size].cpu())
                 x_all = torch.cat(xs, dim=0)
             return x_all

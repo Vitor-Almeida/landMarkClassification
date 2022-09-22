@@ -11,14 +11,9 @@ import gc
 import torch
 import torch_sparse as S
 import pickle
-from tokenizers import Tokenizer
-from tokenizers import pre_tokenizers
-from tokenizers import normalizers
-from tokenizers.models import WordPiece
-from tokenizers.processors import TemplateProcessing
+from utils.helper_funs import hug_tokenizer
 from sklearn import preprocessing
 import pickle
-from tokenizers.trainers import WordPieceTrainer
 
 def _split_listN(a, n):
     '''split an array in n equal parts
@@ -28,29 +23,7 @@ def _split_listN(a, n):
 
 def _tokenizer(df:pd.DataFrame, vocab_size:int):
 
-    bertTokenizer = Tokenizer(WordPiece(unk_token="[UNK]"))
-    bertTokenizer.normalizer = normalizers.Sequence([normalizers.NFD(), normalizers.Lowercase(), normalizers.StripAccents()])
-    bertTokenizer.pre_tokenizer = pre_tokenizers.Sequence([pre_tokenizers.Punctuation('removed'),pre_tokenizers.Whitespace()])
-
-    bertTokenizer.post_processor = TemplateProcessing(
-        single="[CLS] $A [SEP]",
-        pair="[CLS] $A [SEP] $B:1 [SEP]:1",
-        special_tokens=[
-            ("[CLS]", 1),
-            ("[SEP]", 2),
-        ],
-    )
-
-    trainer = WordPieceTrainer(
-        vocab_size = vocab_size, 
-        #special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"],
-        special_tokens=[],
-        min_frequency = 0, 
-        show_progress = True, 
-        initial_alphabet  = [],
-        #continuing_subword_prefix = '##'
-        continuing_subword_prefix = ''
-    )
+    bertTokenizer , trainer = hug_tokenizer(vocab_size)
 
     bertTokenizer.train_from_iterator(df['text'], trainer=trainer)
 
@@ -77,17 +50,39 @@ def _load_csv(path: str, maxRows: int) -> pd.DataFrame:
 
     df = pd.concat([dfTrain,dfTest,dfVal],ignore_index=True)
 
-    df['text_token'],vocabMaps = _tokenizer(df,vocab_size=30522)
+    #eurlex_lexbench e scotus_lexbench
+    #df['text'] = df['text'].apply(lambda row: row[:int(len(row)/2)])
+
+    df['text_token'],vocabMaps = _tokenizer(df,vocab_size=200000)
     
     df = df.head(maxRows)
     df.reset_index(inplace=True,drop=True)
+
+    multi2label = []
+
+    try:
+        #check for multilabel data
+        #df['labels'].apply(eval)
+        numClasses = len(eval(df['labels'][0]))
+        labelListList = df['labels'].to_list()
+        #uniqueLabel = list(k for k,_ in itertools.groupby(labelListList))
+        uniqueLabel = list(set(labelListList))
+        multiIdToLabel = {idx:label for idx,label in enumerate(uniqueLabel)}
+        #pdJoin = pd.DataFrame.from_dict(multiIdToLabel,orient='tight')
+        multiLabelToId = {label:idx for idx,label in enumerate(uniqueLabel)}
+        df['labels'] = df['labels'].apply(lambda row: multiLabelToId[row])
+        multi2label = [multiIdToLabel,multiLabelToId,numClasses]
+        with open(os.path.join(ROOT_DIR,'data',path,'interm','multi2label.pickle'), 'wb') as f:
+            pickle.dump(multi2label, f)
+    except:
+        pass
 
     df.to_csv(os.path.join(ROOT_DIR,'data',path,'interm','pre_graph.csv'),index=False)
 
     with open(os.path.join(ROOT_DIR,'data',path,'interm','vocabMaps.pickle'), 'wb') as f:
         pickle.dump(vocabMaps, f)
 
-    return df, vocabMaps
+    return df, vocabMaps, multi2label
 
 def _get_worddocGraph(df:pd.DataFrame,nThreads:int, vocabMaps):
 
@@ -101,8 +96,6 @@ def _get_worddocGraph(df:pd.DataFrame,nThreads:int, vocabMaps):
     def dummytfidf(doc):
         return doc
 
-    #making sure that [1,2,3] lists saved in csv are lists in pandas:
-    
     #pode existir tokens (nodes) que so existe na aresta doc -> word, nao tem na word, word (fazer um teste)
     tfidfVector = TfidfVectorizer(#ngram_range=(1,1),
                                   dtype = np.float32,
@@ -112,12 +105,8 @@ def _get_worddocGraph(df:pd.DataFrame,nThreads:int, vocabMaps):
 
     tfidfMatrix = tfidfVector.fit_transform(df['text_token'])
 
-    #vocabularyVec = tfidfVector.get_feature_names_out().astype('U')
-
     tfidfColToVocab = {pair[1]:pair[0] for pair in tfidfVector.vocabulary_.items()}
 
-    #vocabToId = {label:idx for idx, label in enumerate(vocabularyVec)}
-    #idToVocab = {idx:label for idx, label in enumerate(vocabularyVec)}
     docToLabel = {idx:label for idx, label in enumerate(df['labels'])}
     docToSplit = {idx:label for idx, label in enumerate(df['split'])}
 
@@ -239,12 +228,12 @@ def _parallel_load(docsArrThread, windowSize, vocabMaps):
 
     manager.shutdown()
 
-    print('Nwindows: ',windowQty)
-
     edgeDf = pd.DataFrame(edgeList,columns=['src','tgt','qty'])
 
     del edgeList
     gc.collect()
+
+    print('Nwindows: ',windowQty)
 
     edgeDf = edgeDf.groupby(['src','tgt']).sum().reset_index()
 
@@ -260,6 +249,8 @@ def _parallel_load(docsArrThread, windowSize, vocabMaps):
     edgeDf['weight'] = np.log(edgeDf['qty']/windowQty / (edgeDf['qtyTTsrc']/windowQty*edgeDf['qtyTTtgt']/windowQty)) ##pq os weights aumentaram? e estao sem uma boa distribuição?
     edgeDf.loc[edgeDf['src']==edgeDf['tgt'], 'weight'] = 1.0
     edgeDf = edgeDf[edgeDf['weight']>0]
+
+    edgeDf['weight'] = preprocessing.MinMaxScaler().fit_transform(edgeDf[['weight']])
     
     edgeDf = edgeDf[['src','tgt','weight']]
 
@@ -271,7 +262,7 @@ def _parallel_load(docsArrThread, windowSize, vocabMaps):
 
     #edgeDf = pd.concat([edgeDf,_edgeDf],ignore_index=True).drop_duplicates()
 
-    edgeDf['label'] = 999
+    edgeDf['label'] = 999999
     edgeDf['splits'] = 'wordword'
     edgeDf['src'] = edgeDf['src'].apply(lambda row: idToVocab[row])
     edgeDf['tgt'] = edgeDf['tgt'].apply(lambda row: idToVocab[row])
@@ -280,17 +271,26 @@ def _parallel_load(docsArrThread, windowSize, vocabMaps):
 
 def _create_edge_df(path: str, maxRows: int, windowSize: int, nThreads:int) -> pd.DataFrame:
 
-    if not os.path.exists(os.path.join(ROOT_DIR,'data',path,'interm','pre_graph.csv')) and \
-       not os.path.exists(os.path.join(ROOT_DIR,'data',path,'interm','vocabMaps.pickle')):
+    multi2label = []
 
-        df, vocabMaps = _load_csv(path,maxRows)
+    if not os.path.exists(os.path.join(ROOT_DIR,'data',path,'interm','pre_graph.csv')):
+
+        df, vocabMaps, multi2label = _load_csv(path,maxRows)
 
     else:
+
         df = pd.read_csv(os.path.join(ROOT_DIR,'data',path,'interm','pre_graph.csv'))
         df['text_token']=df['text_token'].apply(eval)
         f = open(os.path.join(ROOT_DIR,'data',path,'interm','vocabMaps.pickle'),'rb')
         vocabMaps = pickle.load(f)
         f.close()
+
+        if os.path.exists(os.path.join(ROOT_DIR,'data',path,'interm','multi2label.pickle')):
+
+            f = open(os.path.join(ROOT_DIR,'data',path,'interm','multi2label.pickle'),'rb')
+            multi2label = pickle.load(f)
+            f.close()
+
 
     docsArr, wordDocDf = _get_worddocGraph(df,nThreads,vocabMaps)
 
@@ -299,17 +299,24 @@ def _create_edge_df(path: str, maxRows: int, windowSize: int, nThreads:int) -> p
     graphDf = pd.concat([edgeDf,wordDocDf],ignore_index=True)
 
     #em algumas bases sim, em outras nao: (?)
-    #graphDf['weight'] = preprocessing.MinMaxScaler().fit_transform(graphDf[['weight']])
-    #graphDf['weight'] = preprocessing.StandardScaler().fit_transform(graphDf[['weight']])
-    #a=np.histogram(graphDf['weight'],bins=100)[0]
-    #b=np.histogram(graphDf['weight'],bins=100)[1]
+    #graphDf['weight'] = preprocessing.RobustScaler().fit_transform(graphDf[['weight']])
+
+    #mini = min(preprocessing.RobustScaler().fit_transform(graphDf[['weight']]))
+    #if mini >= 0:
+    #    mini = 0
+    #graphDf['weight'] = preprocessing.RobustScaler().fit_transform(graphDf[['weight']]) - mini
+
+    #import matplotlib.pyplot as plt
+    #plt.hist(np.array(graphDf['weight']), 100, density=True)
+    #plt.savefig("matplotlib.png")
+    #plt.close()
 
     #todo:
     #tirando palavras do TFIDF (doc-word), pois não existem no word->word, por causa de um possivel pmi = 0 ou pmi < 0 (olhar.)
 
-    return graphDf
+    return graphDf, multi2label
 
-def _create_pygraph_data(graphDf:pd.DataFrame) -> None:
+def _create_pygraph_data(graphDf:pd.DataFrame,multi2label) -> None:
 
     graphDf = graphDf.sample(frac=1)
     graphDf.dropna(inplace=True) #pode ter algum termo como #N/A como token?
@@ -328,21 +335,15 @@ def _create_pygraph_data(graphDf:pd.DataFrame) -> None:
     labels = np.array(graphDf['label'])
 
     allUniqueNodes = np.unique(allNodesSrc) #AllNodesSrc e Tgt uniques are equal. undirected graph
-    allUniqueLabels = np.unique(labels)
 
     label2idNodes = {label:id for id,label in enumerate(allUniqueNodes.tolist())}
     allUniqueNodesId = np.array([label2idNodes[idx] for idx in allUniqueNodes.tolist()])
 
-    label2id = {label:id for id,label in enumerate(allUniqueLabels.tolist())}
-
     _graphDf['nodeId'] = _graphDf['src'].apply(lambda row: label2idNodes[row])
-    _graphDf['label'] = _graphDf['label'].apply(lambda row: label2id[row])
     _graphDf = _graphDf[['nodeId','label','splits']].drop_duplicates()
     _graphDf['train_mask'] = _graphDf['splits'].apply(lambda row: True if row=='train' else False)
     _graphDf['test_mask'] = _graphDf['splits'].apply(lambda row: True if row=='test' else False)
     _graphDf['val_mask'] = _graphDf['splits'].apply(lambda row: True if row=='val' else False)
-
-    numClasses = len(allUniqueLabels) - 1
 
     trainMask = _graphDf['train_mask'].to_numpy(dtype=bool)
     valMask = _graphDf['val_mask'].to_numpy(dtype=bool)
@@ -351,11 +352,20 @@ def _create_pygraph_data(graphDf:pd.DataFrame) -> None:
     allUniqueNodesId = _graphDf['nodeId'].to_numpy(dtype=int)
 
     arr1inds = allUniqueNodesId.argsort()[::-1][:len(allUniqueNodesId)]
+    labelToNodes = labelToNodes[arr1inds[::-1]]
     trainMask = trainMask[arr1inds[::-1]]
     valMask = valMask[arr1inds[::-1]]
     testMask = testMask[arr1inds[::-1]]
-    labelToNodes = labelToNodes[arr1inds[::-1]]
+    
     allUniqueNodesId = allUniqueNodesId[arr1inds[::-1]]
+
+    if len(multi2label)>0:
+        numClasses = multi2label[2]
+        labelToNodes = np.array([eval(multi2label[0].get(n,str([0.0]*multi2label[2]))) for n in labelToNodes])
+        labels = torch.tensor(labelToNodes,dtype=torch.float32)
+    else:
+        numClasses = len(np.unique(labels)) - 1
+        labels = torch.tensor(labelToNodes,dtype=torch.long)
 
     del graphDf
     del _graphDf
@@ -373,7 +383,6 @@ def _create_pygraph_data(graphDf:pd.DataFrame) -> None:
 
     edgeIndex = torch.tensor(edgeIndex,dtype=torch.long)
     wgtEdges = torch.tensor(wgtEdges,dtype=torch.float32)
-    labels = torch.tensor(labelToNodes,dtype=torch.long)
     trainMask = torch.tensor(trainMask,dtype=torch.bool)
     valMask = torch.tensor(valMask,dtype=torch.bool)
     testMask = torch.tensor(testMask,dtype=torch.bool)
@@ -393,9 +402,9 @@ def fast_pipe_graph(path: str, maxRows: int, windowSize: int, nThreads:int) -> N
     print('Dataset: ',path)
     print("Creating graph dataset... this might take a while", datetime.now().strftime("%H:%M:%S"))
 
-    graphDf = _create_edge_df(path, maxRows, windowSize, nThreads)
+    graphDf, multi2label = _create_edge_df(path, maxRows, windowSize, nThreads)
 
-    pyData = _create_pygraph_data(graphDf)
+    pyData = _create_pygraph_data(graphDf, multi2label)
 
     with open(os.path.join(ROOT_DIR,'data',path,'pygraph.pickle'), 'wb') as f:
         pickle.dump(pyData, f)

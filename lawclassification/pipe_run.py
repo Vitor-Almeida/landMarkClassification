@@ -1,6 +1,7 @@
 import dataset.pipe_create as pipe
 import dataset.pipe_graph as graph
 import dataset.fast_pipe_graph as fastGraph
+import dataset.fast_pipe_graph_multi as fastGraphMulti
 
 def main(): 
     #pipe.yelp_review(max_data_size=20000,test_split=0.2)
@@ -27,10 +28,20 @@ def main():
     #graph.create_graph(path='twitter_chines',maxRows=1000000,windowSize=20)
     #pipe.tj(test_split=0.2,max_classes=10,max_rows=1000000,selected_col='cu')
 
-    fastGraph.fast_pipe_graph(path='twitter_chines',maxRows=1000000,windowSize=20,nThreads=16)
-    fastGraph.fast_pipe_graph(path='r8_chines',maxRows=1000000,windowSize=20,nThreads=16)
-    fastGraph.fast_pipe_graph(path='ohsumed',maxRows=1000000,windowSize=20,nThreads=16)
+    #fastGraph.fast_pipe_graph(path='twitter_chines',maxRows=1000000,windowSize=20,nThreads=16)
+    #fastGraph.fast_pipe_graph(path='r8_chines',maxRows=1000000,windowSize=20,nThreads=16)
+    #fastGraph.fast_pipe_graph(path='ohsumed',maxRows=1000000,windowSize=20,nThreads=16)
 
-    
+    fastGraph.fast_pipe_graph(path='r8_chines',maxRows=1000000,windowSize=20,nThreads=16)
+    #fastGraphMulti.fast_pipe_graph(path='SemEval2018-Task1-all-data',maxRows=1000000,windowSize=20,nThreads=16)
+    #fastGraphMulti.fast_pipe_graph(path='SemEval2018-Task1-all-data',maxRows=1000000,windowSize=10,nThreads=16)
+
+    #fastGraphMulti.fast_pipe_graph(path='ecthr_a_lexbench',maxRows=1000000,windowSize=20,nThreads=16) #ok, 
+    #fastGraphMulti.fast_pipe_graph(path='ecthr_b_lexbench',maxRows=1000000,windowSize=20,nThreads=16) #ok
+    #fastGraphMulti.fast_pipe_graph(path='ledgar_lexbench',maxRows=1000000,windowSize=20,nThreads=16) #ok bug UNK nao encontrado ?
+    #fastGraphMulti.fast_pipe_graph(path='eurlex_lexbench',maxRows=1000000,windowSize=20,nThreads=16) #ok
+    #fastGraphMulti.fast_pipe_graph(path='scotus_lexbench',maxRows=1000000,windowSize=20,nThreads=16) #ok
+    #fastGraphMulti.fast_pipe_graph(path='unfair_lexbench',maxRows=1000000,windowSize=20,nThreads=16) #ok
+
 if __name__ == '__main__':
     main()

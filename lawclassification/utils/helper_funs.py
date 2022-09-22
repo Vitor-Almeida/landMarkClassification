@@ -2,33 +2,13 @@
 from utils.definitions import ROOT_DIR
 import os
 import pandas as pd
-
-def print_step_log(idx,cur_epoch,model,metricsViews):
-
-    logInterval = int(model.total_steps/50)
-
-    if idx % logInterval == 0 and idx > 0:
-        qtyToFormat = len(metricsViews)
-        str_to_format = []
-
-        for pos in range(0,qtyToFormat):
-            string = ['{',str(pos),'}']
-            string = ''.join(string)
-            str_to_format.append(string)
-        str_to_format = '   '.join(str_to_format)
-
-        str_gamb = []
-
-        for views in metricsViews:
-            string = "'"+str(views)+": "+str(round(metricsViews[views].item(),4))+"'"
-            str_gamb.append(string)
-        str_gamb = ','.join(str_gamb)
-
-        str_end = str_to_format.format(*eval(str_gamb))
-
-        print(f'| epoch:{cur_epoch+1} | {idx}/{len(model.train_dataloader)} batches | {str_end}')
-    else:
-        return None
+from tokenizers import Tokenizer
+from tokenizers import pre_tokenizers
+from tokenizers import normalizers
+from tokenizers.models import WordPiece
+from tokenizers.processors import TemplateProcessing
+from tokenizers.trainers import WordPieceTrainer
+import numpy as np
 
 def read_experiments(fileName,type):
 
@@ -40,45 +20,48 @@ def read_experiments(fileName,type):
 
     return df.to_dict(orient='records')
 
-def print_batch_log(cur_epoch,model,metricsViews):
+def hug_tokenizer(vocab_size:int):
 
-    qtyToFormat = len(metricsViews)
-    str_to_format = []
+    bertTokenizer = Tokenizer(WordPiece(unk_token="[UNK]"))
+    bertTokenizer.normalizer = normalizers.Sequence([normalizers.NFD(), normalizers.Lowercase(), normalizers.StripAccents()])
+    bertTokenizer.pre_tokenizer = pre_tokenizers.Sequence([pre_tokenizers.Punctuation('removed'),pre_tokenizers.Whitespace()])
 
-    for pos in range(0,qtyToFormat):
-        string = ['{',str(pos),'}']
-        string = ''.join(string)
-        str_to_format.append(string)
-    str_to_format = '   '.join(str_to_format)
+    bertTokenizer.post_processor = TemplateProcessing(
+        single="[CLS] $A [SEP]",
+        pair="[CLS] $A [SEP] $B:1 [SEP]:1",
+        special_tokens=[
+            ("[CLS]", 1),
+            ("[SEP]", 2),
+        ],
+    )
 
-    str_gamb = []
+    trainer = WordPieceTrainer(
+        vocab_size = vocab_size, 
+        special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"],
+        #special_tokens=[],
+        min_frequency = 0, 
+        show_progress = True, 
+        initial_alphabet  = [],
+        #continuing_subword_prefix = '##'
+        continuing_subword_prefix = ''
+    )
 
-    for views in metricsViews:
-        string = "'"+str(views)+": "+str(round(metricsViews[views].item(),4))+"'"
-        str_gamb.append(string)
-    str_gamb = ','.join(str_gamb)
+    return bertTokenizer, trainer
 
-    str_end = str_to_format.format(*eval(str_gamb))
+class EarlyStopping:
+    def __init__(self, patience, min_delta):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.counter = 0
+        self.min_validation_loss = np.inf
 
-    print(f'|end of epoch:{cur_epoch+1} | {len(model.train_dataloader)}/{len(model.train_dataloader)} batches | {str_end}')
-
-
-def print_params_terminal(model):
-
-    dataset_length = len(model.dataset_test) + len(model.dataset_train) + len(model.dataset_val)
-    train_labels = model.num_labels_train
-    test_labels = model.num_labels_test
-    val_labels = model.num_labels_val
-
-    print('-'*59)
-    print(f'Parameters:')
-    print(f'problem_type: {model.problem_type} | dataset_name = {model.dataname}')
-    print(f'modelo: {model.model_name} | batchsize: {model.batchsize} | max_tokens = {model.max_char_length} | learning_rate = {model.lr}')
-    print(f'weight_decay: {model.weight_decay} | lr_decay: {model.decay_lr}')
-    print(f'epochs = {model.epochs} | warmup_size = {model.warmup_size} | dropout = {model.dropout}')
-    print(f'num_labels = {train_labels} | dataset_length = {dataset_length} ')
-    print(f'random_seed = {model.seed_val} | train_length = {len(model.dataset_train)} | train_labels = {train_labels}')
-    print(f'test_length = {len(model.dataset_test)} | test_labels = {test_labels} | val_length = {len(model.dataset_val)} | test_labels = {val_labels}')
-    print('-'*59)
-
-    return None
+    def early_stop(self, validation_loss):
+        if validation_loss < self.min_validation_loss:
+            self.min_validation_loss = validation_loss
+            self.counter = 0
+        elif validation_loss > (self.min_validation_loss + self.min_delta):
+            self.counter += 1
+            print('early stop count =',self.counter)
+            if self.counter >= self.patience:
+                return True
+        return False

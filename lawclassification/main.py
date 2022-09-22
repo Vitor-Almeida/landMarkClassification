@@ -1,7 +1,8 @@
 from utils.helper_funs import read_experiments
 from train.deep_train import deep_train
 from train.gcn_train import gcn_train
-import models.tfidf_models as boost
+from train.xgb_train import xgb_train
+import torch
 import gc
 import mlflow
 
@@ -20,11 +21,11 @@ def main():
     #deep training:
     for idx,experiment in enumerate(expDicDeep):
 
-        print(f'begin of deep experiment: {idx+1}/{len(expDicDeep)}')
-        print(f'Olhar resultados no mlflow !')
+        print(f'Starting deep learning experiments: {idx+1}/{len(expDicDeep)}')
+        print(f'Results are being logged in mlflow ...')
 
         #outro tipo de experimento poderia ser dataname+modelo+'busca hyper'
-        mlflow.set_experiment(experiment['dataname'])
+        mlflow.set_experiment('[Deep]' + experiment['dataname'])
 
         with mlflow.start_run(run_name=experiment['descripton']):
 
@@ -38,40 +39,41 @@ def main():
 
         del train
         gc.collect()
+        torch.cuda.empty_cache()
 
     #xgboost training
     for idx,experiment in enumerate(expDicBoost):
-        print(f'begin of boost experiment: {idx+1}/{len(expDicBoost)}')
-        print(f'Olhar resultados no mlflow !')
+        print(f'Starting xgboost experiments: {idx+1}/{len(expDicBoost)}')
+        print(f'Results are being logged in mlflow ...')
 
-        mlflow.set_experiment(experiment['dataname']+experiment['model_name'])
+        mlflow.set_experiment('[Boost]' + experiment['dataname'])
 
-        boostExp = boost.xgb_tfidf(experiment)
-        boostExp.csv_to_dm()
+        boostExp = xgb_train(experiment)
+        
 
-        mlflow.xgboost.autolog(log_input_examples=False,log_model_signatures=False,log_models=False)
         with mlflow.start_run(run_name=experiment['descripton']):
+            mlflow.log_params(experiment)
             #colocar optuna:
-            boostExp.train()
+            boostExp.fit_and_eval()
 
         del boostExp
         gc.collect()
+        torch.cuda.empty_cache()
 
     #gcn training
     for idx,experiment in enumerate(expDicGCN):
-        print(f'begin of gcn experiment: {idx+1}/{len(expDicBoost)}')
-        print(f'Olhar resultados no mlflow !')
+        print(f'Starting GNN experiments: {idx+1}/{len(expDicGCN)}')
+        print(f'Results are being logged in mlflow ...')
 
-        #mlflow.set_experiment(experiment['dataname']+experiment['model_name'])
+        mlflow.set_experiment('[GCN]'+experiment['dataname'])
 
-        gcnExp = gcn_train(experiment)
-        gcnExp.fit_and_eval()
-
-        #mlflow.xgboost.autolog(log_input_examples=False,log_model_signatures=False,log_models=False)
-        #with mlflow.start_run(run_name=experiment['descripton']):
+        with mlflow.start_run(run_name=experiment['descripton']):
+            gcnExp = gcn_train(experiment)
+            gcnExp.fit_and_eval()
 
         del gcnExp
         gc.collect()
+        torch.cuda.empty_cache()
 
     return None
 

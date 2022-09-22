@@ -35,13 +35,13 @@ class deep_train():
                            problem_type = self.model.problem_type)
 
         self.metricsTrainEpoch = _.clone(prefix='Train_Epoch_')
-        self.metricsTrainBatch = _.clone(prefix='Train_Batch_')
+        #self.metricsTrainBatch = _.clone(prefix='Train_Batch_')
 
         self.metricsTestEpoch = _.clone(prefix='Test_Epoch_')
-        self.metricsTestBatch = _.clone(prefix='Test_Batch_')
+        #self.metricsTestBatch = _.clone(prefix='Test_Batch_')
 
         self.metricsValEpoch = _.clone(prefix='Val_Epoch_')
-        self.metricsValBatch = _.clone(prefix='Val_Batch_')
+        #self.metricsValBatch = _.clone(prefix='Val_Batch_')
 
         self.datasetParams = {'train_labels':self.model.num_labels_train,
                               'dataset_length':len(self.model.dataset_test) + len(self.model.dataset_train) + len(self.model.dataset_val),
@@ -55,14 +55,14 @@ class deep_train():
 
         mlflow.log_params(self.datasetParams)
 
-        self.progress_bar = tqdm(range(self.model.total_steps))
-
         #print_params_terminal(self.model)
 
     def train_loop(self):
 
         self.model.model.train()
         scaler = torch.cuda.amp.GradScaler(enabled=True)
+
+        epochLoss = batchItens = 0 
 
         for idx,batch in enumerate(self.model.train_dataloader):
             self.model.optimizer.zero_grad()
@@ -82,22 +82,27 @@ class deep_train():
             
             self.model.scheduler.step()
 
-            self.metricsTrainBatch(outputs.logits, batch['labels'].int())
+            #self.metricsTrainBatch(outputs.logits, batch['labels'].int())
             self.metricsTrainEpoch(outputs.logits, batch['labels'].int())
 
-            if idx % self.logInterval == 0 and idx > 0:
-                metric = self.metricsTrainBatch.compute()
-                mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()}
-                )
-                metric = self.metricsTrainBatch.reset()
+            epochLoss += loss * batch['input_ids'].size()[1]
+            batchItens += batch['input_ids'].size()[1]
 
-            self.progress_bar.update(1)
+            #if idx % self.logInterval == 0 and idx > 0:
+            #    metric = self.metricsTrainBatch.compute()
+            #    mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()}
+            #    )
+            #    metric = self.metricsTrainBatch.reset()
 
-        return None
+        epochLoss = epochLoss / batchItens
+
+        return epochLoss.item()
 
     def test_loop(self):
 
         self.model.model.eval()
+
+        epochLoss = batchItens = 0 
 
         with torch.no_grad():
             for idx,batch in enumerate(self.model.test_dataloader):
@@ -111,11 +116,18 @@ class deep_train():
 
                 self.metricsTestEpoch(outputs.logits, batch['labels'].int())
 
-        return None
+                epochLoss += outputs.loss * batch['input_ids'].size()[1]
+                batchItens += batch['input_ids'].size()[1]
+
+        epochLoss = epochLoss / batchItens
+
+        return epochLoss.item()
 
     def val_loop(self):
 
         self.model.model.eval()
+
+        epochLoss = batchItens = 0 
 
         with torch.no_grad():
             for _,batch in enumerate(self.model.val_dataloader):
@@ -127,32 +139,34 @@ class deep_train():
                 #self.metricsValBatch(outputs.logits, batch['labels'].int())
                 self.metricsValEpoch(outputs.logits, batch['labels'].int())
 
-        return None
+                epochLoss += outputs.loss * batch['input_ids'].size()[1]
+                batchItens += batch['input_ids'].size()[1]
+
+        epochLoss = epochLoss / batchItens
+
+        return epochLoss.item()
 
     def fit_and_eval(self):
 
-        for epoch_i in range(0, self.model.epochs):
+        for epoch_i in tqdm(range(0, self.model.epochs)):
 
-            self.train_loop()
+            trainLoss = self.train_loop()
             metric = self.metricsTrainEpoch.compute()
             mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},epoch_i+1)
+            mlflow.log_metrics({'Train_Epoch_loss':round(trainLoss,4)},epoch_i+1)
             metric = self.metricsTrainEpoch.reset()
 
-            self.test_loop()
+            testLoss = self.test_loop()
             metric = self.metricsTestEpoch.compute()
             mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},epoch_i+1)
+            mlflow.log_metrics({'Test_Epoch_loss':round(testLoss,4)},epoch_i+1)
             metric = self.metricsTestEpoch.reset()
 
-        self.val_loop()
+            if self.model.earlyStopper.early_stop(testLoss):
+                break
+
+        valLoss = self.val_loop()
         metric = self.metricsValEpoch.compute()
         mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},self.model.epochs)
+        mlflow.log_metrics({'Val_Epoch_loss':round(valLoss,4)},epoch_i+1)
         metric = self.metricsValEpoch.reset()
-
-        #self.progress_bar.refresh()
-        self.progress_bar.reset()
-        torch.cuda.empty_cache()
-        del self.model
-        gc.collect()
-        torch.cuda.empty_cache()
-
-        ### tentar limpar tudo aqui
