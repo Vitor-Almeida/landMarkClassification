@@ -73,7 +73,7 @@ def csv_to_dmMatrix(dataname:str,problem_type:str):
 
         dfCorpus['text_token'], vocabMaps = _tokenizer(dfCorpus,vocab_size=200000)
 
-        tfidfVector = TfidfVectorizer(#ngram_range=(1,1),
+        tfidfVector = TfidfVectorizer(#ngram_range=(1,1), #artigo lexbench usa (1,3)
                                       dtype = np.float32,
                                       preprocessor=_dummytfidf,
                                       tokenizer=_dummytfidf,

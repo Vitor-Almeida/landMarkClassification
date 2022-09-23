@@ -1317,16 +1317,64 @@ def ohsumed_create(test_split:float,max_classes:int,max_row:int) -> None:
         json.dump(label2id,f)
         f.close()
 
-def tj(test_split:float,max_classes:int,max_rows:int,selected_col:str) -> None:
+def tj(test_split:float,selected_col:str) -> None:
 
     path = os.path.join(ROOT_DIR,'data','tj','raw','dataset_tjce_v1_trata_texto.csv.zip')
 
     df = pd.read_csv(path)
 
-    df = df[df['tamanho_texto']>500]
+    #df = df[df['tamanho_texto']>500]
 
-    cols = ['assuntoPrincipal','classe','documento_tipo','assunto_Hid','assunto','grupo','grupo_Hid','grupo_assunto','assunto_folha','texto_tratado']
+    df.rename(columns={'texto_tratado':'text'},inplace=True)
+    cols = ['text'] + [selected_col]
+    df.index = df['documento_id']
 
-    df = df[cols]
+    df = df[cols].drop_duplicates()
+
+    df = df.sample(frac=1)
+
+    labelList = np.unique(df[selected_col]).tolist()
+    id2label = {idx:label for idx, label in enumerate(labelList)}
+    label2id = {label:idx for idx, label in enumerate(labelList)}
+    df['labels'] = df[selected_col].apply(lambda row: label2id[row])
+
+    df.drop(columns=[selected_col],inplace=True)
+
+    X_train, X_testval, y_train, y_testval = train_test_split(df['text'],df['labels'], test_size=test_split)#, stratify= df['labels'])
+
+    del df
+    gc.collect()
+
+    XTestval = pd.DataFrame()
+    XTestval['labels'] = y_testval.to_frame()
+    XTestval['text'] = X_testval.to_frame()
+
+    X_test, X_val, y_test, y_val = train_test_split(XTestval['text'],XTestval['labels'], test_size=test_split)#, stratify= XTestval['labels'] )
+
+    del XTestval
+    gc.collect()
+
+    XTrain = pd.DataFrame()
+    XTrain['labels'] = y_train.to_frame()
+    XTrain['text'] = X_train.to_frame()
+
+    XTest = pd.DataFrame()
+    XTest['labels'] = y_test.to_frame()
+    XTest['text'] = X_test.to_frame()
+
+    Xval = pd.DataFrame()
+    Xval['labels'] = y_val.to_frame()
+    Xval['text'] = X_val.to_frame()
+    
+    XTest.to_csv(os.path.join(ROOT_DIR,'data','tj','interm','test','test.csv'),index=False)
+    XTrain.to_csv(os.path.join(ROOT_DIR,'data','tj','interm','train','train.csv'),index=False)
+    Xval.to_csv(os.path.join(ROOT_DIR,'data','tj','interm','val','val.csv'),index=False)
+
+    with open(os.path.join(ROOT_DIR,'data','tj','interm','id2label.json'),'w') as f:
+        json.dump(id2label,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','tj','interm','label2id.json'),'w') as f:
+        json.dump(label2id,f)
+        f.close()
 
     return None

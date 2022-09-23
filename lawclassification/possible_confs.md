@@ -7,20 +7,8 @@
 #roberta-base
 #saibo.legal-roberta-base
 #CaseLaw-BERT
-
-#possible datasets:
-#yelp;single_label_classification
-
-#eurlex57k;multi_label_classification
-#echr;multi_label_classification
-#dmoz_4090;single_label_classification
-#dmoz_1500;single_label_classification
-#dmoz_510_1500;single_label_classification
-#cornell_landmarks;single_label_classification
-
-
-#SemEval2018-Task1-all-data;multi_label_classification
-
+#ulysses-camara.legal-bert-pt-br
+#neuralmind.bert-base-portuguese-cased
 
 #ecthr_a_lexbench;multi_label_classification
 #ecthr_b_lexbench;multi_label_classification
@@ -28,3 +16,28 @@
 #ledgar_lexbench;single_label_classification
 #scotus_lexbench;single_label_classification
 #unfair_lexbench;multi_label_classification
+#ohsumed;single_label_classification
+
+
+
+
+
+
+
+
+
+
+
+
+
+#possible datasets:
+#yelp;single_label_classification
+#eurlex57k;multi_label_classification
+#echr;multi_label_classification
+#dmoz_4090;single_label_classification
+#dmoz_1500;single_label_classification
+#dmoz_510_1500;single_label_classification
+#cornell_landmarks;single_label_classification
+#SemEval2018-Task1-all-data;multi_label_classification
+
+

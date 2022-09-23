@@ -12,7 +12,6 @@ import torch
 import torch_sparse as S
 import pickle
 from utils.helper_funs import hug_tokenizer
-from sklearn import preprocessing
 import pickle
 
 def _split_listN(a, n):
@@ -50,10 +49,15 @@ def _load_csv(path: str, maxRows: int) -> pd.DataFrame:
 
     df = pd.concat([dfTrain,dfTest,dfVal],ignore_index=True)
 
-    #eurlex_lexbench e scotus_lexbench
-    #df['text'] = df['text'].apply(lambda row: row[:int(len(row)/2)])
+    numChar = sum(len(s) for s in df['text'])
 
-    df['text_token'],vocabMaps = _tokenizer(df,vocab_size=200000)
+    #eurlex_lexbench , scotus_lexbench e o tj
+    if path == 'tj':
+        df['text'] = df['text'].apply(lambda row: row[:int(len(row)/3)])
+    elif numChar > 300_000_000: #limite da memoria
+        df['text'] = df['text'].apply(lambda row: row[:int(len(row)/2)])
+
+    df['text_token'],vocabMaps = _tokenizer(df,vocab_size=300000)
     
     df = df.head(maxRows)
     df.reset_index(inplace=True,drop=True)
@@ -153,7 +157,8 @@ def _dic_sum(dicOri,dicSum):
     for words in dicSum:
 
         if dicOri.get(words) != None:
-            dicOri[words] = 1 + dicSum[words]
+            #dicOri[words] = 1 + dicSum[words]
+            dicOri[words] = dicOri[words] + dicSum[words]
         else:
             dicOri[words] = dicSum[words]
 
@@ -178,7 +183,8 @@ def _co_corrence_build(docsArr, windowSize, processNum, returnDict):
             curWindow = doc[idx: idx + windowSize]
 
             windowsCount += 1
-            sentence = set(curWindow) #unique, PMI being defined as occurence once in the window
+            #sentence = set(curWindow)
+            sentence = curWindow
 
             for words in sentence:
 
@@ -195,6 +201,7 @@ def _parallel_load(docsArrThread, windowSize, vocabMaps):
 
     '''split docArr in n threads'''
 
+    #windows size os cara tao colocando = tamanho da sentença.
 
     #mudar esse negocio do manager
     manager = multiprocessing.Manager()
@@ -213,8 +220,6 @@ def _parallel_load(docsArrThread, windowSize, vocabMaps):
     for proc in procs:
         proc.join()
 
-
-    idToVocab=vocabMaps[2]
     windowQty = 0
 
     edgeList=[]
@@ -246,11 +251,14 @@ def _parallel_load(docsArrThread, windowSize, vocabMaps):
     singleOccrDf.rename(columns={'qtyTTsrc':'qtyTTtgt'},inplace=True)
     edgeDf = edgeDf.merge(singleOccrDf,how='inner',on='tgt')
     
-    edgeDf['weight'] = np.log(edgeDf['qty']/windowQty / (edgeDf['qtyTTsrc']/windowQty*edgeDf['qtyTTtgt']/windowQty)) ##pq os weights aumentaram? e estao sem uma boa distribuição?
-    edgeDf.loc[edgeDf['src']==edgeDf['tgt'], 'weight'] = 1.0
-    edgeDf = edgeDf[edgeDf['weight']>0]
+    normPmiFac = -1/np.log2(edgeDf['qty']/windowQty)
 
-    edgeDf['weight'] = preprocessing.MinMaxScaler().fit_transform(edgeDf[['weight']])
+    edgeDf['weight'] = normPmiFac * np.log2((edgeDf['qty']/windowQty) / ((edgeDf['qtyTTsrc']/windowQty)*(edgeDf['qtyTTtgt']/windowQty)))
+    edgeDf = edgeDf[edgeDf['weight']>0.2]
+    #edgeDf = edgeDf[edgeDf['weight']>0]
+    edgeDf.loc[edgeDf['src']==edgeDf['tgt'], 'weight'] = 1.0
+    
+     #isso tira a simetria da adj?
     
     edgeDf = edgeDf[['src','tgt','weight']]
 
@@ -262,6 +270,7 @@ def _parallel_load(docsArrThread, windowSize, vocabMaps):
 
     #edgeDf = pd.concat([edgeDf,_edgeDf],ignore_index=True).drop_duplicates()
 
+    idToVocab=vocabMaps[2]
     edgeDf['label'] = 999999
     edgeDf['splits'] = 'wordword'
     edgeDf['src'] = edgeDf['src'].apply(lambda row: idToVocab[row])
@@ -312,7 +321,7 @@ def _create_edge_df(path: str, maxRows: int, windowSize: int, nThreads:int) -> p
     #plt.close()
 
     #todo:
-    #tirando palavras do TFIDF (doc-word), pois não existem no word->word, por causa de um possivel pmi = 0 ou pmi < 0 (olhar.)
+    #tirando palavras do TFIDF (doc-word), pois não existem no word->word, por causa de um possivel pmi = 0 ou pmi < 0.2 (olhar.)
 
     return graphDf, multi2label
 
@@ -322,8 +331,8 @@ def _create_pygraph_data(graphDf:pd.DataFrame,multi2label) -> None:
     graphDf.dropna(inplace=True) #pode ter algum termo como #N/A como token?
 
     #removing selfloops and symmetry
-    _graphDf = graphDf[(graphDf['src']!=graphDf['tgt'])]
-    _graphDf = _graphDf[~((_graphDf['tgt'].str.contains("doc_")))][['src','label','splits']].drop_duplicates() #bad
+    #_graphDf = graphDf[(graphDf['src']!=graphDf['tgt'])]
+    _graphDf = graphDf[~((graphDf['tgt'].str.contains("doc_")))][['src','label','splits']].drop_duplicates() #<--isso aqui só vai funcionar se tiver simetrico
 
     allNodesSrc = np.array(graphDf['src'],dtype=np.str_)
     allNodesTgt = np.array(graphDf['tgt'],dtype=np.str_)

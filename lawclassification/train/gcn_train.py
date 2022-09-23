@@ -21,7 +21,7 @@ class gcn_train():
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        self.earlyStopper = EarlyStopping(patience=2000, min_delta=0)
+        self.earlyStopper = EarlyStopping(patience=10, min_delta=0)
 
         self.starttime = datetime.now()
     

@@ -29,7 +29,7 @@ class xgb_models():
                                                         'max_bin' : 256, #Increasing this number improves the optimality of splits at the cost of higher computation time.
                                                         'tree_method': 'gpu_hist',
                                                         'predictor': 'gpu_predictor',
-                                                        'objective': 'multi:softmax'  #multi:softprob
+                                                        'objective': 'multi:softprob'  #multi:softprob
                                                         #'eval_metric': ['mlogloss','merror'] #accuracia
                                                         }, #last one is used for early stopping
 
