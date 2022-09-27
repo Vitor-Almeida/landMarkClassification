@@ -26,10 +26,9 @@ class SimpleOutput(ModelOutput):
     past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
     hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     attentions: Optional[Tuple[torch.FloatTensor]] = None
-    cross_attentions: Optional[Tuple[torch.FloatTensor]] = None
+    cross_attentions: Optional[Tuple[torch.FloatTensor]] = None #colocar half aqui
 
-
-def sinusoidal_init(num_embeddings: int, embedding_dim: int):
+def sinusoidal_init(num_embeddings: int, embedding_dim: int, device: str):
     # keep dim 0 for padding token position encoding zero vector
     position_enc = np.array([
         [pos / np.power(10000, 2 * i / embedding_dim) for i in range(embedding_dim)]
@@ -37,12 +36,16 @@ def sinusoidal_init(num_embeddings: int, embedding_dim: int):
 
     position_enc[1:, 0::2] = np.sin(position_enc[1:, 0::2])  # dim 2i
     position_enc[1:, 1::2] = np.cos(position_enc[1:, 1::2])  # dim 2i+1
-    return torch.from_numpy(position_enc).type(torch.FloatTensor)
+
+    position_enc = torch.tensor(position_enc, dtype=torch.float32)#, device=device)
+    #torch.from_numpy(position_enc).type(torch.float32) 
+
+    return position_enc
 
 
 class HierarchicalBert(nn.Module):
 
-    def __init__(self, encoder, max_segments=64, max_segment_length=128):
+    def __init__(self, encoder, max_segments, max_segment_length, device):
         super(HierarchicalBert, self).__init__()
         supported_models = ['bert', 'roberta', 'deberta']
         assert encoder.config.model_type in supported_models  # other model types are not supported so far
@@ -55,7 +58,7 @@ class HierarchicalBert(nn.Module):
         # Init sinusoidal positional embeddings
         self.seg_pos_embeddings = nn.Embedding(max_segments + 1, encoder.config.hidden_size,
                                                padding_idx=0,
-                                               _weight=sinusoidal_init(max_segments + 1, encoder.config.hidden_size))
+                                               _weight=sinusoidal_init(max_segments + 1, encoder.config.hidden_size, device))
         # Init segment-wise transformer-based encoder
         self.seg_encoder = nn.Transformer(d_model=encoder.config.hidden_size,
                                           nhead=encoder.config.num_attention_heads,
@@ -103,22 +106,30 @@ class HierarchicalBert(nn.Module):
         encoder_outputs = encoder_outputs[:, :, 0]
 
         # Infer real segments, i.e., mask paddings
-        seg_mask = (torch.sum(input_ids, 2) != 0).to(input_ids.dtype)
+        seg_mask = (torch.sum(input_ids, 2) != 0)#.to(input_ids.dtype)
         # Infer and collect segment positional embeddings
+        #seg_positions = torch.arange(1, self.max_segments + 1).to(input_ids.device) * seg_mask
         seg_positions = torch.arange(1, self.max_segments + 1).to(input_ids.device) * seg_mask
         # Add segment positional embeddings to segment inputs
         encoder_outputs += self.seg_pos_embeddings(seg_positions)
 
         # Encode segments with segment-wise transformer
+        # error aqui quando vai pro test:
         seg_encoder_outputs = self.seg_encoder(encoder_outputs)
 
         # Collect document representation
         outputs, _ = torch.max(seg_encoder_outputs, 1)
 
+        #returnClass = transfReturn(outputs)
+
         return SimpleOutput(last_hidden_state=outputs, hidden_states=outputs)
+        #return returnClass
 
 if __name__ == "__main__":
     from transformers import AutoTokenizer, AutoModel, AutoModelForSequenceClassification
+
+    #for testing the model:
+
     modelpath = os.path.join('/home/jaco/Projetos/landMarkClassification','lawclassification','models','external','bert-base-uncased')
     tokenizer = AutoTokenizer.from_pretrained(modelpath)
 

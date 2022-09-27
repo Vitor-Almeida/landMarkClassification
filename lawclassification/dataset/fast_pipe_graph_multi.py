@@ -6,6 +6,7 @@ import numpy as np
 from collections import Counter
 import multiprocessing
 import torch_geometric.data as data
+from torch_geometric import utils as U
 from datetime import datetime
 import gc
 import torch
@@ -327,7 +328,7 @@ def _create_edge_df(path: str, maxRows: int, windowSize: int, nThreads:int) -> p
 
 def _create_pygraph_data(graphDf:pd.DataFrame,multi2label) -> None:
 
-    graphDf = graphDf.sample(frac=1)
+    #graphDf = graphDf.sample(frac=1)
     graphDf.dropna(inplace=True) #pode ter algum termo como #N/A como token?
 
     #removing selfloops and symmetry
@@ -348,12 +349,14 @@ def _create_pygraph_data(graphDf:pd.DataFrame,multi2label) -> None:
     label2idNodes = {label:id for id,label in enumerate(allUniqueNodes.tolist())}
     allUniqueNodesId = np.array([label2idNodes[idx] for idx in allUniqueNodes.tolist()])
 
+    _graphDf['docIndex'] = _graphDf['src'].apply(lambda row: int(row.replace("doc_","")) if "doc_" in row else 999999)
     _graphDf['nodeId'] = _graphDf['src'].apply(lambda row: label2idNodes[row])
-    _graphDf = _graphDf[['nodeId','label','splits']].drop_duplicates()
+    _graphDf = _graphDf[['nodeId','label','splits','docIndex']].drop_duplicates()
     _graphDf['train_mask'] = _graphDf['splits'].apply(lambda row: True if row=='train' else False)
     _graphDf['test_mask'] = _graphDf['splits'].apply(lambda row: True if row=='test' else False)
     _graphDf['val_mask'] = _graphDf['splits'].apply(lambda row: True if row=='val' else False)
 
+    indexMask = _graphDf['docIndex'].to_numpy(dtype=int)
     trainMask = _graphDf['train_mask'].to_numpy(dtype=bool)
     valMask = _graphDf['val_mask'].to_numpy(dtype=bool)
     testMask = _graphDf['test_mask'].to_numpy(dtype=bool)
@@ -365,16 +368,19 @@ def _create_pygraph_data(graphDf:pd.DataFrame,multi2label) -> None:
     trainMask = trainMask[arr1inds[::-1]]
     valMask = valMask[arr1inds[::-1]]
     testMask = testMask[arr1inds[::-1]]
+    indexMask = indexMask[arr1inds[::-1]]
     
     allUniqueNodesId = allUniqueNodesId[arr1inds[::-1]]
 
     if len(multi2label)>0:
         numClasses = multi2label[2]
+        homoLabels = torch.tensor(labelToNodes,dtype=torch.int32)
         labelToNodes = np.array([eval(multi2label[0].get(n,str([0.0]*multi2label[2]))) for n in labelToNodes])
         labels = torch.tensor(labelToNodes,dtype=torch.float32)
     else:
         numClasses = len(np.unique(labels)) - 1
         labels = torch.tensor(labelToNodes,dtype=torch.long)
+        homoLabels = torch.tensor(labelToNodes,dtype=torch.int32)
 
     del graphDf
     del _graphDf
@@ -390,16 +396,22 @@ def _create_pygraph_data(graphDf:pd.DataFrame,multi2label) -> None:
     #oneHotMtx = oneHotMtx.to_dense()
     oneHotMtx = oneHotMtx.to_torch_sparse_coo_tensor()
 
+    indexMask = torch.tensor(indexMask,dtype=torch.int32)
     edgeIndex = torch.tensor(edgeIndex,dtype=torch.long)
     wgtEdges = torch.tensor(wgtEdges,dtype=torch.float32)
     trainMask = torch.tensor(trainMask,dtype=torch.bool)
     valMask = torch.tensor(valMask,dtype=torch.bool)
     testMask = torch.tensor(testMask,dtype=torch.bool)
 
+    homophily = round(U.homophily(edgeIndex,homoLabels),4)
+
     return data.Data(x = oneHotMtx,
                      edge_index = edgeIndex,
                      edge_weight = wgtEdges,
+                     indexMask = indexMask,
+                     homoLabels = homoLabels,
                      #edge_attr = edgeAttr,
+                     homophily = homophily,
                      y = labels,
                      num_classes = numClasses,
                      test_mask = testMask,

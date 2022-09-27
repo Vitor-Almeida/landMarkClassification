@@ -3,6 +3,7 @@ import torch
 import gc
 from models.deep_models import deep_models
 from utils.deep_metrics import metrics_config
+from utils.helper_funs import save_model
 import mlflow
 
 class deep_train():
@@ -25,8 +26,13 @@ class deep_train():
                                  experiment['problem_type'],
                                  experiment['weight_decay'],
                                  experiment['decay_lr'],
-                                 experiment['qty_layer_unfreeze'])
+                                 experiment['qty_layer_unfreeze'],
+                                 bool(experiment['hierarchical']),
+                                 int(experiment['hier_max_seg']),
+                                 int(experiment['hier_max_seg_length'])
+                                 )
         
+        self.flag_mixed_precision = not(bool(experiment['hierarchical']))
         self.log_every_n_steps = 50
         self.logInterval = int(self.model.total_steps/self.log_every_n_steps)
 
@@ -65,7 +71,7 @@ class deep_train():
         epochLoss = batchItens = 0 
 
         for idx,batch in enumerate(self.model.train_dataloader):
-            self.model.optimizer.zero_grad()
+            
             batch = {k: v.to(self.model.device) for k, v in batch.items()}
 
             #mixed precision training:
@@ -78,21 +84,20 @@ class deep_train():
             torch.nn.utils.clip_grad_norm_(self.model.model.parameters(), 1.0)
             
             scaler.step(self.model.optimizer) #self.model.optimizer.step()
-            scaler.update()
-            
             self.model.scheduler.step()
 
-            #self.metricsTrainBatch(outputs.logits, batch['labels'].int())
+            #torch.isnan(x)
+            #torch.isinf(x)
+            
+            scaler.update()
+            self.model.optimizer.zero_grad(set_to_none = True)
+
             self.metricsTrainEpoch(outputs.logits, batch['labels'].int())
 
             epochLoss += loss * batch['input_ids'].size()[1]
             batchItens += batch['input_ids'].size()[1]
 
-            #if idx % self.logInterval == 0 and idx > 0:
-            #    metric = self.metricsTrainBatch.compute()
-            #    mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()}
-            #    )
-            #    metric = self.metricsTrainBatch.reset()
+        #self.model.scheduler.step()
 
         epochLoss = epochLoss / batchItens
 
@@ -108,7 +113,8 @@ class deep_train():
             for idx,batch in enumerate(self.model.test_dataloader):
                 batch = {k: v.to(self.model.device) for k, v in batch.items()}
 
-                with torch.autocast(device_type=self.model.device.type, dtype=torch.float16, enabled=True):
+                with torch.autocast(device_type=self.model.device.type, dtype=torch.float16, enabled=self.flag_mixed_precision):
+                #with torch.autocast(device_type=self.model.device.type, dtype=torch.float16, enabled=True):
                     outputs = self.model.model(**batch)
 
                 #lexGlue tem q fazer um if self.model.dataname == 'unfair-tos', cat([1] ou [0] no começo do vetor se a label for [0,0,0..0])
@@ -133,7 +139,7 @@ class deep_train():
             for _,batch in enumerate(self.model.val_dataloader):
                 batch = {k: v.to(self.model.device) for k, v in batch.items()}
 
-                with torch.autocast(device_type=self.model.device.type, dtype=torch.float16, enabled=True):
+                with torch.autocast(device_type=self.model.device.type, dtype=torch.float16, enabled=self.flag_mixed_precision):
                     outputs = self.model.model(**batch)
 
                 #self.metricsValBatch(outputs.logits, batch['labels'].int())
@@ -163,6 +169,7 @@ class deep_train():
             metric = self.metricsTestEpoch.reset()
 
             if self.model.earlyStopper.early_stop(testLoss):
+                save_model(self.model, epoch_i)
                 break
 
         valLoss = self.val_loop()

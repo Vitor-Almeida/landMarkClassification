@@ -9,6 +9,22 @@ from tokenizers.models import WordPiece
 from tokenizers.processors import TemplateProcessing
 from tokenizers.trainers import WordPieceTrainer
 import numpy as np
+import torch
+
+def save_model(model, epoch):
+
+    torch.save(
+    {
+        'bert_model': model.model.bert.state_dict(),
+        'classifier': model.model.classifier.state_dict(),
+        'optimizer': model.optimizer.state_dict(),
+        'epoch': epoch,
+    },
+            os.path.join(ROOT_DIR,'data',model.dataname,'interm', 'tuned_deep_model.pth')
+    )
+
+    return None
+
 
 def read_experiments(fileName,type):
 

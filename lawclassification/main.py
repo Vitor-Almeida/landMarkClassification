@@ -1,3 +1,4 @@
+from train.bertGcn_train import bertGcn_Train
 from utils.helper_funs import read_experiments
 from train.deep_train import deep_train
 from train.gcn_train import gcn_train
@@ -14,6 +15,7 @@ def main():
     expDicDeep = read_experiments('run_experiments_deep.csv','deep_learning')
     expDicBoost = read_experiments('run_experiments_boost.csv','boost')
     expDicGCN = read_experiments('run_experiments_gcn.csv','gcn_learning')
+    expDicBertGCN = read_experiments('run_experiments_bertgcn.csv','bertgc_learning')
     
     #mlflow.delete_experiment(experiment_id=3)
     #mlflow gc --backend-store-uri sqlite:///mlflow.db
@@ -24,8 +26,10 @@ def main():
         print(f'Starting deep learning experiments: {idx+1}/{len(expDicDeep)}')
         print(f'Results are being logged in mlflow ...')
 
+        expSubName = '[Deep_Hier]' if bool(experiment['hierarchical']) else '[Deep]'
+
         #outro tipo de experimento poderia ser dataname+modelo+'busca hyper'
-        mlflow.set_experiment('[Deep]' + experiment['dataname'])
+        mlflow.set_experiment(expSubName + experiment['dataname'])
 
         with mlflow.start_run(run_name=experiment['descripton']):
 
@@ -69,6 +73,20 @@ def main():
 
         with mlflow.start_run(run_name=experiment['descripton']):
             gcnExp = gcn_train(experiment)
+            gcnExp.fit_and_eval()
+
+        del gcnExp
+        gc.collect()
+        torch.cuda.empty_cache()
+
+    for idx,experiment in enumerate(expDicBertGCN):
+        print(f'Starting Bert+GNN experiments: {idx+1}/{len(expDicBertGCN)}')
+        print(f'Results are being logged in mlflow ...')
+
+        mlflow.set_experiment('[(B)GCN]'+experiment['dataname'])
+
+        with mlflow.start_run(run_name=experiment['descripton']):
+            gcnExp = bertGcn_Train(experiment)
             gcnExp.fit_and_eval()
 
         del gcnExp

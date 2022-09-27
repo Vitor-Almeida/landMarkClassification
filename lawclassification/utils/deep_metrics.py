@@ -31,9 +31,9 @@ def metrics_config(num_labels,device,problem_type):
                                          threshold = 0.5, 
                                          subset_accuracy = False).to(device)
 
-            auroc = torchmetrics.AUROC(num_classes=num_labels, 
-                                       average='macro',
-                                       subset_accuracy = False).to(device)
+            #auroc = torchmetrics.AUROC(num_classes=num_labels, 
+            #                           average='macro',
+            #                           subset_accuracy = False).to(device)
 
             return torchmetrics.MetricCollection({'accuracy':accuracy,
                                                   'f1score_micro':f1score_micro,
@@ -69,12 +69,12 @@ def metrics_config(num_labels,device,problem_type):
             nDCG = torchmetrics.RetrievalNormalizedDCG()
 
             #nao bate:
-            auroc_micro = torchmetrics.AUROC(num_classes=num_labels,
-                                             average='micro').to(device)
+            #auroc_micro = torchmetrics.AUROC(num_classes=num_labels,
+            #                                 average='micro').to(device)
 
             #testar
-            auroc_macro = torchmetrics.AUROC(num_classes=num_labels,
-                                             average='macro').to(device)
+            #auroc_macro = torchmetrics.AUROC(num_classes=num_labels,
+            #                                 average='macro').to(device)
 
 
             return torchmetrics.MetricCollection({'accuracy':accuracy,

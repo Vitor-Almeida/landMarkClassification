@@ -1,31 +1,26 @@
 import torch
-from torch_geometric.nn import GCNConv
+from torch_geometric.nn import GCNConv, BatchNorm
 import torch.nn.functional as F
 import torch_sparse as S
-import random
-import numpy as np
 
 class Text_GCN(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, device):
         super().__init__()
         self.convs = torch.nn.ModuleList()
+        self.batch_norms = torch.nn.ModuleList()
         self.convs.append(GCNConv(in_channels, hidden_channels, add_self_loops=False, normalize=False))
+        self.batch_norms.append(BatchNorm(hidden_channels))
         self.convs.append(GCNConv(hidden_channels, out_channels, add_self_loops=False, normalize=False))
+        
         self.device = device
 
-        self.seedVal = random.randint(0, 1000)
-        random.seed(self.seedVal)
-        np.random.seed(self.seedVal)
-        torch.manual_seed(self.seedVal)
-        torch.cuda.manual_seed_all(self.seedVal)
-
     def forward(self, x, edge_index, edge_weight):
-        for i, conv in enumerate(self.convs):
+        for conv, batch_norm  in zip(self.convs[:-1],self.batch_norms):
             x = conv(x, edge_index, edge_weight)
-            if i < len(self.convs) - 1:
-                x = x.relu_()
-                x = F.dropout(x, p=0.5, training=self.training)
-        return x
+            #x = batch_norm(x)
+            x = F.leaky_relu(x, negative_slope=0.2)
+            x = F.dropout(x, p=0.5, training=self.training)
+        return self.convs[-1](x, edge_index, edge_weight)
 
     def inference(self, x_all, subgraph_loader):
         # Compute representations of nodes layer by layer, using *all*
@@ -44,8 +39,10 @@ class Text_GCN(torch.nn.Module):
 
                     x = conv(x, batch.edge_index.to(self.device), batch.edge_weight.to(self.device))
                     if i < len(self.convs) - 1:
-                        x = x.relu_()
+                        #x = self.batch_norms[0](x) #only works for 1 layer
+                        x = F.leaky_relu(x, negative_slope=0.2)
+                        #x = x.relu_()
 
                     xs.append(x[:batch.batch_size].cpu())
                 x_all = torch.cat(xs, dim=0)
-            return x_all
+            return x_all 

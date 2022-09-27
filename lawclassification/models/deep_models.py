@@ -1,6 +1,7 @@
 import random
 import numpy as np
 from dataset.dataset_load import deep_data
+from models.hier_models import HierarchicalBert
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import torch
 from torch.utils.data import DataLoader
@@ -28,8 +29,16 @@ def set_learning_rates(base_lr,decay_lr,model,weight_decay,qtyFracLayers):
 
     totalLayersToUnfreeze = int(qtyFracLayers*tt_layers)
 
+    hierLayers = ['seg_pos_embeddings','seg_encoder']
+
     layer_names = []
     for idx, (name, param) in enumerate(model.named_parameters()):
+
+        if 'seg_pos_embeddings' in name or 'seg_encoder' in name:
+            #aqui vai ter layer duplicada
+            param.requires_grad = True #descongelar
+            continue
+            #layer_names.append(name)
 
         curLayerNum = re.search(r'layers?\.[0-9]+\.',name)
 
@@ -44,7 +53,12 @@ def set_learning_rates(base_lr,decay_lr,model,weight_decay,qtyFracLayers):
             param.requires_grad = True #descongelar
             layer_names.append(name) #o pooler fica com um LR alto, ta certo?
 
+    extraNames = [name for (name, param) in model.named_parameters() if 'seg_pos_embeddings' in name or 'seg_encoder' in name]
+
     layer_names.reverse()
+    #layer_names = [layer for layer in layer_names if 'seg_pos_embeddings' not in layer and 'seg_encoder' not in layer]
+    layer_names = layer_names.copy() + extraNames.copy()
+    #layer_names=list(set(layer_names))
     parameters = []
 
     prev_group_name = re.search(r'layers?\.[0-9]+\.',layer_names[0])
@@ -53,7 +67,7 @@ def set_learning_rates(base_lr,decay_lr,model,weight_decay,qtyFracLayers):
         pre_layerNum = None
     else:
         prev_group_name = prev_group_name.group()
-        pre_layerNum = int(re.search(r'[0-9]',prev_group_name.group()))
+        pre_layerNum = int(re.search(r'[0-9]',prev_group_name).group())
 
     #fix this:
     if prev_group_name == 'weight':
@@ -102,7 +116,8 @@ def set_learning_rates(base_lr,decay_lr,model,weight_decay,qtyFracLayers):
     return parameters
 
 class deep_models():
-    def __init__(self, model_name, batchsize, max_char_length, lr, epochs, warmup_size, dropout, dataname, problem_type, weight_decay, decay_lr, qty_layer_unfreeze):
+    def __init__(self, model_name, batchsize, max_char_length, lr, epochs, warmup_size, dropout, dataname,
+                 problem_type, weight_decay, decay_lr, qty_layer_unfreeze, hierarchical, hier_max_seg, hier_max_seg_length):
         super(deep_models, self).__init__()
 
         logging.set_verbosity_error() #remove transformers warnings.
@@ -114,6 +129,7 @@ class deep_models():
         self.problem_type = problem_type
         self.batchsize = batchsize
         self.max_char_length = max_char_length
+        self.flag_hierarchical = hierarchical
         self.warmup_size = warmup_size
         self.weight_decay = weight_decay
         self.qtyFracLayers = qty_layer_unfreeze
@@ -121,6 +137,9 @@ class deep_models():
         self.decay_lr = decay_lr
         self.epochs = epochs
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.hier_max_seg = hier_max_seg
+        self.hier_max_seg_length = hier_max_seg_length
 
         self.seed_val = random.randint(0, 1000)
         random.seed(self.seed_val)
@@ -133,20 +152,32 @@ class deep_models():
         self.dataset_val = deep_data(typeSplit='val', 
                                      max_length = self.max_char_length, 
                                      tokenizer = self.tokenizer, 
+                                     hier_max_seg = self.hier_max_seg,
+                                     hier_max_seg_length= self.hier_max_seg_length,
                                      dataname = self.dataname,
-                                     problem_type = self.problem_type)
+                                     problem_type = self.problem_type,
+                                     flag_hierarchical = self.flag_hierarchical,
+                                     flag_bertgcn = False)
 
         self.dataset_train = deep_data(typeSplit='train', 
                                        max_length = self.max_char_length, 
                                        tokenizer = self.tokenizer, 
+                                       hier_max_seg = self.hier_max_seg,
+                                       hier_max_seg_length= self.hier_max_seg_length,
                                        dataname = self.dataname,
-                                       problem_type = self.problem_type)
+                                       problem_type = self.problem_type,
+                                       flag_hierarchical = self.flag_hierarchical,
+                                       flag_bertgcn = False)
 
         self.dataset_test = deep_data(typeSplit='test', 
                                       max_length = self.max_char_length, 
                                       tokenizer = self.tokenizer, 
+                                      hier_max_seg = self.hier_max_seg,
+                                      hier_max_seg_length= self.hier_max_seg_length,
                                       dataname = self.dataname,
-                                      problem_type = self.problem_type)
+                                      problem_type = self.problem_type,
+                                      flag_hierarchical = self.flag_hierarchical,
+                                      flag_bertgcn = False)
 
         self.val_dataloader = DataLoader(dataset = self.dataset_val,
                                          batch_size = self.batchsize,
@@ -179,16 +210,22 @@ class deep_models():
                                                                         num_labels = self.num_labels_train,
                                                                         id2label = self.dataset_train.id2label,
                                                                         label2id = self.dataset_train.label2id,
-                                                                        output_attentions = False,
-                                                                        output_hidden_states = False,
+                                                                        output_attentions = False, #?
+                                                                        output_hidden_states = False, #?
                                                                         ################
-                                                                        #torch_dtype = torch.float16, #fica tudo 16 bytes, o que nao é bom?
+                                                                        torch_dtype = torch.float32 #fica tudo 16 bytes, o que nao é bom?
                                                                         #classifier_dropout = self.dropout, ###?
                                                                         #hidden_dropout_prob = self.dropout, ###?
                                                                         #attention_probs_dropout_prob = self.dropout
                                                                         )
 
-        self.model = self.model.cuda() if torch.cuda.is_available() else self.model.cpu()
+        #check hierarchical
+        if self.flag_hierarchical:
+
+            self.model.bert = HierarchicalBert(encoder=self.model.bert,
+                                               max_segments=self.hier_max_seg,
+                                               max_segment_length=self.hier_max_seg_length,
+                                               device = self.device)
 
         self.model.to(self.device)
 
@@ -234,7 +271,7 @@ class deep_models():
         def lr_lambda(current_step, 
                       num_warmup_steps=int(self.warmup_size * self.total_steps),
                       num_training_steps = self.total_steps):
-
+        
             if current_step < num_warmup_steps:
                 return float(current_step) / float(max(1, num_warmup_steps))
             return max(0.0, float(num_training_steps - current_step) / float(max(1, num_training_steps - num_warmup_steps)))
