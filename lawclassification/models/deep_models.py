@@ -8,112 +8,7 @@ from torch.utils.data import DataLoader
 import os
 from utils.definitions import ROOT_DIR
 from transformers import logging
-import re
-from utils.helper_funs import EarlyStopping
-
-def set_learning_rates(base_lr,decay_lr,model,weight_decay,qtyFracLayers):
-
-    #https://kozodoi.me/python/deep%20learning/pytorch/tutorial/2022/03/29/discriminative-lr.html
-
-    # horrivel, tentar fazer de uma forma melhor:
-
-    for param in model.parameters():
-        param.requires_grad = False #começar com tudo congelado.
-
-    ############ SEMPRE CHECAR AQUI !!! NEM TODOS OS TRANSFORMERS TEM O MESMO PADRAO DE NOME DAS CAMADAS!!! ##########
-
-    allLayers = [name[0] for name in model.named_parameters()]
-    allLayersStr=' '.join(allLayers)
-    tt_layers = len(np.unique(re.findall(r'layers?\.[0-9]+\.',allLayersStr)))
-    tt_layers=0 if tt_layers==1 else tt_layers
-
-    totalLayersToUnfreeze = int(qtyFracLayers*tt_layers)
-
-    hierLayers = ['seg_pos_embeddings','seg_encoder']
-
-    layer_names = []
-    for idx, (name, param) in enumerate(model.named_parameters()):
-
-        if 'seg_pos_embeddings' in name or 'seg_encoder' in name:
-            #aqui vai ter layer duplicada
-            param.requires_grad = True #descongelar
-            continue
-            #layer_names.append(name)
-
-        curLayerNum = re.search(r'layers?\.[0-9]+\.',name)
-
-        if curLayerNum != None:
-            curLayerNum = int(re.search(r'[0-9]+',curLayerNum.group() ).group() )
-            if tt_layers - curLayerNum <= totalLayersToUnfreeze:
-                param.requires_grad = True #descongelar
-                layer_names.append(name) 
-        elif re.search(r'embeddings',name) != None:
-            pass
-        else:
-            param.requires_grad = True #descongelar
-            layer_names.append(name) #o pooler fica com um LR alto, ta certo?
-
-    extraNames = [name for (name, param) in model.named_parameters() if 'seg_pos_embeddings' in name or 'seg_encoder' in name]
-
-    layer_names.reverse()
-    #layer_names = [layer for layer in layer_names if 'seg_pos_embeddings' not in layer and 'seg_encoder' not in layer]
-    layer_names = layer_names.copy() + extraNames.copy()
-    #layer_names=list(set(layer_names))
-    parameters = []
-
-    prev_group_name = re.search(r'layers?\.[0-9]+\.',layer_names[0])
-    if prev_group_name == None:
-        prev_group_name = layer_names[0].split('.')[-1] # a ideia aqui é pegar todos os pares weight/bias e manter igual
-        pre_layerNum = None
-    else:
-        prev_group_name = prev_group_name.group()
-        pre_layerNum = int(re.search(r'[0-9]',prev_group_name).group())
-
-    #fix this:
-    if prev_group_name == 'weight':
-        check1 = 'weight'
-        check2 = 'bias'
-    elif prev_group_name == 'bias':
-        check1 = 'bias'
-        check2 = 'weight'
-
-    # store params & learning rates
-    for idx, name in enumerate(layer_names):
-        
-        # parameter group name
-        if re.search(r'layers?\.[0-9]+\.',name) == None:
-            cur_group_name = name.split('.')[-1] # a ideia aqui é pegar todos os pares weight/bias e manter igual
-            if (prev_group_name == check1 and cur_group_name == check2) or idx==0 or re.search(r'classifier',name) != None:
-                base_lr = base_lr
-            else:
-                base_lr *= decay_lr
-                #base_lr = base_lr - 1 check
-            prev_group_name = cur_group_name
-
-        else:
-            cur_layerNum = int(re.search(r'[0-9]+',(re.search(r'layers?\.[0-9]+\.',name)).group() ).group() )
-            if pre_layerNum == None:
-                 pre_layerNum = cur_layerNum
-                 #base_lr = base_lr - 1 check
-                 base_lr *= decay_lr
-
-            if cur_layerNum == pre_layerNum:
-                base_lr = base_lr
-            else:
-                #base_lr = base_lr - 1 check
-                base_lr *= decay_lr
-
-            pre_layerNum = cur_layerNum
-        
-        # display info
-        print(f'{idx}: lr = {base_lr:.6f}, {name}')
-        
-        # append layer parameters
-        parameters += [{'params': [p for n, p in model.named_parameters() if n == name and p.requires_grad],
-                        'lr':     base_lr,
-                        'weight_decay': weight_decay}]
-
-    return parameters
+from utils.helper_funs import EarlyStopping, set_learning_rates
 
 class deep_models():
     def __init__(self, model_name, batchsize, max_char_length, lr, epochs, warmup_size, dropout, dataname,
@@ -265,7 +160,8 @@ class deep_models():
                                                               self.decay_lr,
                                                               self.model,
                                                               self.weight_decay,
-                                                              self.qtyFracLayers)) 
+                                                              self.qtyFracLayers,
+                                                              None)) 
                 
         #Slanted Triangular Learning Rates
         def lr_lambda(current_step, 

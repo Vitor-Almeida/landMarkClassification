@@ -29,7 +29,7 @@ class gcn_train():
         torch.manual_seed(self.seedVal)
         torch.cuda.manual_seed_all(self.seedVal)
 
-        self.earlyStopper = EarlyStopping(patience=5, min_delta=0)
+        self.earlyStopper = EarlyStopping(patience=10, min_delta=0)
 
         self.starttime = datetime.now()
     
