@@ -19,6 +19,8 @@ class gcn_train():
 
     def __init__(self,experiment):
 
+        #torch.cuda.mem_get_info(self.device)
+
         super(gcn_train, self).__init__()
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -29,7 +31,7 @@ class gcn_train():
         torch.manual_seed(self.seedVal)
         torch.cuda.manual_seed_all(self.seedVal)
 
-        self.earlyStopper = EarlyStopping(patience=10, min_delta=0)
+        self.earlyStopper = EarlyStopping(patience=3, min_delta=0)
 
         self.starttime = datetime.now()
     
@@ -57,47 +59,54 @@ class gcn_train():
         if self.problemType == 'single_label_classification':
             self.criterion = torch.nn.CrossEntropyLoss()
             self.logCrit = torch.nn.CrossEntropyLoss()
-            sampler = ImbalancedSampler(self.dataset, input_nodes=self.dataset.train_mask)
+            #samplerTrain = ImbalancedSampler(self.dataset, input_nodes=self.dataset.train_mask)
+            #samplerTest = ImbalancedSampler(self.dataset, input_nodes=self.dataset.test_mask)
+            #samplerVal = ImbalancedSampler(self.dataset, input_nodes=self.dataset.val_mask)
         else:
             self.criterion = torch.nn.BCEWithLogitsLoss()
             self.logCrit = torch.nn.BCEWithLogitsLoss()
-            #sampler = ImbalancedSampler(self.dataset.homoLabels, input_nodes=self.dataset.train_mask)
+            #samplerTrain = ImbalancedSampler(self.dataset.homoLabels, input_nodes=self.dataset.train_mask)
+            #samplerTest = ImbalancedSampler(self.dataset.homoLabels, input_nodes=self.dataset.test_mask)
+            #samplerVal = ImbalancedSampler(self.dataset.homoLabels, input_nodes=self.dataset.val_mask)
 
-        #nao funciona com o multilabel:
-        #sampler = ImbalancedSampler(self.dataset, input_nodes=self.dataset.train_mask)
-        #sampler = ImbalancedSampler(self.dataset, input_nodes=self.dataset.train_mask)
 
         self.trainLoader = NeighborLoader(self.dataset, input_nodes=self.dataset.train_mask,
-                                          num_neighbors = self.neigh_param, shuffle=True, 
+                                          num_neighbors = self.neigh_param, 
+                                          shuffle=True, 
                                           batch_size = self.batchSize
-                                          #,sampler = sampler
-                                          #directed = False
-                                          #is_sorted = True
-                                          #num_workers = 8, persistent_workers = True
                                           )
 
-        self.subgraphLoader = NeighborLoader(copy.copy(self.dataset), input_nodes=None,
-                                             num_neighbors = [-1], shuffle=False,
-                                             batch_size = self.batchSize
-                                             #directed = False
-                                             #is_sorted = True
-                                             #num_workers= 4, persistent_workers = True
-                                             )
+        self.testLoader = NeighborLoader(self.dataset, input_nodes=self.dataset.test_mask,
+                                         num_neighbors = self.neigh_param, 
+                                         shuffle=False, 
+                                         batch_size = self.batchSize
+                                         )
+
+        self.valLoader = NeighborLoader(self.dataset, input_nodes=self.dataset.val_mask,
+                                        num_neighbors = self.neigh_param, 
+                                        shuffle=False, 
+                                        batch_size = self.batchSize
+                                        )
+
+        #self.subgraphLoader = NeighborLoader(copy.copy(self.dataset), input_nodes=None,
+        #                                     num_neighbors = [-1], shuffle=False,
+        #                                     batch_size = self.batchSize
+        #                                     #directed = False
+        #                                     #is_sorted = True
+        #                                     #num_workers= 4, persistent_workers = True
+        #                                     )
 
         self.total_steps = len(self.trainLoader) * self.epochs
 
-        def lr_lambda(current_step, num_warmup_steps=int(self.warmup_size * self.total_steps) ,num_training_steps= self.total_steps):
+        self.scheduler = torch.optim.lr_scheduler.LinearLR(self.optimizer, 
+                                                           start_factor=0.1, 
+                                                           end_factor=0.0, 
+                                                           total_iters=int(self.warmup_size * self.total_steps))
 
-            if current_step < num_warmup_steps:
-                return float(current_step) / float(max(1, num_warmup_steps))
-            return max(0.0, float(num_training_steps - current_step) / float(max(1, num_training_steps - num_warmup_steps)))
-
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda,last_epoch=-1)
-
-        del self.subgraphLoader.data.x, self.subgraphLoader.data.y
-        gc.collect()
-        self.subgraphLoader.data.num_nodes = self.dataset.num_nodes
-        self.subgraphLoader.data.n_id = torch.arange(self.dataset.num_nodes)
+        #del self.subgraphLoader.data.x, self.subgraphLoader.data.y
+        #gc.collect()
+        #self.subgraphLoader.data.num_nodes = self.dataset.num_nodes
+        #self.subgraphLoader.data.n_id = torch.arange(self.dataset.num_nodes)
 
         _ = metrics_config(num_labels = self.dataset.num_classes,
                            device = self.model.device,
@@ -125,13 +134,13 @@ class gcn_train():
 
         mlflow.log_params(self.datasetParams)
 
-    def train(self):
+    def train(self,epoch_i):
         self.model.train()
 
         lossTrain = total_examples = 0
 
         for batch in self.trainLoader:
-            self.optimizer.zero_grad()
+            self.optimizer.zero_grad(set_to_none=True)
 
             y = batch.y[:batch.batch_size]
             y_hat = self.model(batch.x, batch.edge_index, batch.edge_weight)[:batch.batch_size]
@@ -146,16 +155,65 @@ class gcn_train():
 
             self.metricsTrainBatch(y_hat, y.int())
 
-            lossTrain += float(loss) * batch.batch_size
+            lossTrain += loss.item() * batch.batch_size
             total_examples += batch.batch_size
 
         metric = self.metricsTrainBatch.compute()
-        mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()})
-        mlflow.log_metrics({'Train_Batch_loss':round(lossTrain/total_examples,4)})
+        mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},epoch_i+1)
+        mlflow.log_metrics({'Train_Batch_loss':round(lossTrain/total_examples,4)},epoch_i+1)
         metric = self.metricsTrainBatch.reset()
 
         return None
 
+    def test_test(self,epoch_i):
+
+        self.model.eval()
+
+        lossTest = total_examples = 0
+
+        with torch.no_grad():
+            for batch in self.testLoader:
+                y = batch.y[:batch.batch_size]
+                y_hat = self.model(batch.x, batch.edge_index, batch.edge_weight)[:batch.batch_size]
+
+                loss = self.criterion(y_hat, y)
+
+                self.metricsTestEpoch(y_hat, y.int())
+
+                lossTest += loss.item() * batch.batch_size
+                total_examples += batch.batch_size
+
+        metric = self.metricsTestEpoch.compute()
+        mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},epoch_i+1)
+        mlflow.log_metrics({'Test_Epoch_loss':round(lossTest/total_examples,4)},epoch_i+1)
+        metric = self.metricsTestEpoch.reset()
+
+        return lossTest/total_examples
+
+    def val_val(self,epoch_i):
+
+        self.model.eval()
+
+        lossVal = total_examples = 0
+
+        with torch.no_grad():
+            for batch in self.valLoader:
+                y = batch.y[:batch.batch_size]
+                y_hat = self.model(batch.x, batch.edge_index, batch.edge_weight)[:batch.batch_size]
+
+                loss = self.criterion(y_hat, y)
+
+                self.metricsValEpoch(y_hat, y.int())
+
+                lossVal += loss.item() * batch.batch_size
+                total_examples += batch.batch_size
+
+        metric = self.metricsValEpoch.compute()
+        mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},epoch_i+1)
+        mlflow.log_metrics({'Test_Epoch_loss':round(lossVal/total_examples,4)},epoch_i+1)
+        metric = self.metricsValEpoch.reset()
+
+        return None
 
     def test(self,epoch_i):
         with torch.no_grad():
@@ -194,17 +252,19 @@ class gcn_train():
     def fit_and_eval(self):
 
         for epoch_i in tqdm(range(self.epochs)):
-            self.train()
+            self.train(epoch_i)
 
             #loss at the begining is really weird in GCNs:
 
-            curTestLoss = self.test(epoch_i)
+            #curTestLoss = self.test(epoch_i)
+            curTestLoss = self.test_test(epoch_i)
 
-            if epoch_i > 10:
+            if epoch_i > 3:
                 
                 earlyStopCriteria = curTestLoss
 
                 if self.earlyStopper.early_stop(earlyStopCriteria):
+                    self.val_val(epoch_i)
                     break
 
         mlflow.log_metrics({'Minute Duration':round((datetime.now() - self.starttime).total_seconds()/60,0)},self.epochs)
