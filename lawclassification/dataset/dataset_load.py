@@ -6,6 +6,7 @@ import numpy as np
 from torch.utils.data import Dataset
 from utils.definitions import ROOT_DIR
 import spacy
+import re
 
 NLP = spacy.load('en_core_web_lg')
 
@@ -67,6 +68,7 @@ class deep_data(Dataset):
 
         if self.flag_hierarchical:
 
+            #esse aqui é especifico do scotus:
             #text1 = re.split('\n{2,}', text1) #achar um 'sentence' tokenizer padrão e tacar aqui <--- tem q retornar outra lista
             text1 = [str(text) for text in NLP(text1).sents]
 

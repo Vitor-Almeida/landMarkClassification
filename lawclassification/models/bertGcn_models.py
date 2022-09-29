@@ -166,7 +166,7 @@ class ensemble_model():
         self.updateDataLoader = torch.utils.data.DataLoader(
             torch.utils.data.TensorDataset(self.dataset['input_ids'][self.dataset.docmask], 
                                            self.dataset['attention_mask'][self.dataset.docmask]),
-                                           batch_size=128)
+                                           batch_size=32)
 
     def append_ids_to_graph(self):
 
@@ -191,6 +191,7 @@ class ensemble_model():
         tmpInsList = []
         tmpAtList = []
 
+        #checar
         for n in self.dataset.indexMask:
             if n == 999999:
                 tmpIdx.append(np.array([[999999]]))
@@ -216,6 +217,7 @@ class Bert_GCN(torch.nn.Module):
         super(Bert_GCN, self).__init__()
         self.m = m
         self.nb_class = nb_class
+        self.problemType = problemType
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         #self.bert_model = AutoModel.from_pretrained(model_name)
         self.bert_model = AutoModel.from_pretrained(model_name, 
@@ -249,27 +251,21 @@ class Bert_GCN(torch.nn.Module):
         input_ids, attention_mask = graphInputIds, graphAttMask
         if self.training:
             cls_feats = self.bert_model(input_ids, attention_mask)[0][:, 0]
-            #graphFeats = cls_feats
-            #dataset[n_id[:batch_size]] = cls_feats
             graphFeats[:batch_size] = cls_feats
-            cls_logit = self.classifier(cls_feats)
-            cls_pred = torch.nn.Softmax(dim=1)(cls_logit)
-            #gcn_logit = self.gcn(graphFeats, graphEdgeIndex, graphEdgeWieght)[:batch_size]
-            gcn_logit = self.gcn(graphFeats, graphEdgeIndex, graphEdgeWieght)[:batch_size]
-
         else:
             cls_feats = graphFeats[:batch_size]
-            cls_logit = self.classifier(cls_feats)
-            cls_pred = torch.nn.Softmax(dim=1)(cls_logit)
-            #gcn_logit = self.gcn.inference_bertGCN(graphFeats, subgraphLoader).to(self.device)
-            gcn_logit = self.gcn(graphFeats, graphEdgeIndex, graphEdgeWieght)[:batch_size]
 
+        gcn_logit = self.gcn(graphFeats, graphEdgeIndex, graphEdgeWieght)[:batch_size]
+        cls_logit = self.classifier(cls_feats)
+        cls_pred = torch.nn.Softmax(dim=1)(cls_logit)
         gcn_pred = torch.nn.Softmax(dim=1)(gcn_logit)
         pred = (gcn_pred+1e-10) * self.m + cls_pred * (1 - self.m)
-        pred = torch.log(pred)
+
+        if self.problemType == 'single_label_classification':
+            pred = torch.log(pred)
+            
         return pred, cls_feats
     
-
     #def forward(self, g, idx):
     #    input_ids, attention_mask = g.ndata['input_ids'][idx], g.ndata['attention_mask'][idx]
     #    if self.training:

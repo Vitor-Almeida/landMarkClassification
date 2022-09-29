@@ -31,13 +31,14 @@ def main():
     #fastGraphMulti.fast_pipe_graph(path='r8_chines',maxRows=1000000,windowSize=20,nThreads=16)
     
     #fastGraphMulti.fast_pipe_graph(path='ohsumed',maxRows=1000000,windowSize=20,nThreads=16) #ok, 
-    fastGraphMulti.fast_pipe_graph(path='ecthr_b_lexbench',maxRows=1000000,windowSize=20,nThreads=16)
-    fastGraphMulti.fast_pipe_graph(path='ecthr_a_lexbench',maxRows=1000000,windowSize=20,nThreads=16)
-    #fastGraphMulti.fast_pipe_graph(path='ledgar_lexbench',maxRows=1000000,windowSize=20,nThreads=16) #ok bug UNK nao encontrado ?
-    fastGraphMulti.fast_pipe_graph(path='eurlex_lexbench',maxRows=1000000,windowSize=20,nThreads=16)
+    #fastGraphMulti.fast_pipe_graph(path='ecthr_b_lexbench',maxRows=1000000,windowSize=20,nThreads=16)
+    #fastGraphMulti.fast_pipe_graph(path='ecthr_a_lexbench',maxRows=1000000,windowSize=20,nThreads=16)
+    #fastGraphMulti.fast_pipe_graph(path='ledgar_lexbench',maxRows=1000000,windowSize=20,nThreads=16)
+    #fastGraphMulti.fast_pipe_graph(path='eurlex_lexbench',maxRows=1000000,windowSize=20,nThreads=16)
     #fastGraphMulti.fast_pipe_graph(path='scotus_lexbench',maxRows=1000000,windowSize=20,nThreads=16)
-    fastGraphMulti.fast_pipe_graph(path='unfair_lexbench',maxRows=1000000,windowSize=20,nThreads=16)
-    #fastGraphMulti.fast_pipe_graph(path='SemEval2018-Task1-all-data',maxRows=1000000,windowSize=20,nThreads=16)
+    #fastGraphMulti.fast_pipe_graph(path='unfair_lexbench',maxRows=1000000,windowSize=20,nThreads=16)
+    fastGraphMulti.fast_pipe_graph(path='SemEval2018-Task1-all-data',maxRows=1000000,windowSize=20,nThreads=16)
+    fastGraphMulti.fast_pipe_graph(path='ohsumed',maxRows=1000000,windowSize=20,nThreads=16)
     #fastGraphMulti.fast_pipe_graph(path='tj',maxRows=1000000,windowSize=20,nThreads=16)
 
 if __name__ == '__main__':

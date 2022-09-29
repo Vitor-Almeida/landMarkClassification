@@ -374,13 +374,13 @@ def _create_pygraph_data(graphDf:pd.DataFrame,multi2label) -> None:
 
     if len(multi2label)>0:
         numClasses = multi2label[2]
-        homoLabels = torch.tensor(labelToNodes,dtype=torch.int32)
+        homoLabels = torch.tensor(labelToNodes,dtype=torch.long)
         labelToNodes = np.array([eval(multi2label[0].get(n,str([0.0]*multi2label[2]))) for n in labelToNodes])
         labels = torch.tensor(labelToNodes,dtype=torch.float32)
     else:
         numClasses = len(np.unique(labels)) - 1
         labels = torch.tensor(labelToNodes,dtype=torch.long)
-        homoLabels = torch.tensor(labelToNodes,dtype=torch.int32)
+        homoLabels = torch.tensor(labelToNodes,dtype=torch.long)
 
     del graphDf
     del _graphDf

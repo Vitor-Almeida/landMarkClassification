@@ -12,7 +12,7 @@ class bertGcn_Train():
     def __init__(self,experiment):
         super(bertGcn_Train, self).__init__()
 
-        self.earlyStopper = EarlyStopping(patience=100, min_delta=0)
+        self.earlyStopper = EarlyStopping(patience=3, min_delta=0)
 
         self.starttime = datetime.now()
 
@@ -24,8 +24,10 @@ class bertGcn_Train():
             self.criterion = torch.nn.NLLLoss()
             self.logCrit = torch.nn.NLLLoss()
         else:
-            self.criterion = torch.nn.BCEWithLogitsLoss()
-            self.logCrit = torch.nn.BCEWithLogitsLoss()
+            #self.criterion = torch.nn.BCEWithLogitsLoss()
+            #self.logCrit = torch.nn.BCEWithLogitsLoss()
+            self.criterion = torch.nn.BCELoss()
+            self.logCrit = torch.nn.BCELoss()
 
         _ = metrics_config(num_labels = self.model.dataset.num_classes,
                            device = self.model.device,
@@ -194,17 +196,13 @@ class bertGcn_Train():
             self.model.dataset = self.model.dataset.to(self.model.device)
             self.train()
 
-            #loss at the begining is really weird in GCNs:
-
-            #curTestLoss = self.test(epoch_i)
-
             curTestLoss = self.test_test(epoch_i)
 
-            if epoch_i > 5:
+            if epoch_i > 3:
                 
                 earlyStopCriteria = curTestLoss
 
                 if self.earlyStopper.early_stop(earlyStopCriteria):
                     break
 
-        mlflow.log_metrics({'Minute Duration':round((datetime.now() - self.starttime).total_seconds()/60,0)},self.epochs)
+        mlflow.log_metrics({'Minute Duration':round((datetime.now() - self.starttime).total_seconds()/60,0)},self.model.epochs)
