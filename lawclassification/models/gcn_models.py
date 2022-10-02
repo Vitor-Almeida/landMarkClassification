@@ -10,16 +10,16 @@ class Text_GCN(torch.nn.Module):
         self.act = torch.nn.ModuleList()
         self.batch_norms = torch.nn.ModuleList()
 
-        self.convs.append(GCNConv(in_channels, hidden_channels, add_self_loops=False, normalize=False))
+        self.convs.append(GCNConv(in_channels, hidden_channels, add_self_loops=True, normalize=True, improved=False))
         self.act.append(torch.nn.PReLU(num_parameters=hidden_channels))
         self.batch_norms.append(BatchNorm(hidden_channels))
         #self.convs.append(GCNConv(hidden_channels, hidden_channels, add_self_loops=False, normalize=False))
-        self.convs.append(GCNConv(hidden_channels, out_channels, add_self_loops=False, normalize=False))
+        self.convs.append(GCNConv(hidden_channels, out_channels, add_self_loops=True, normalize=True, improved=False))
         
         self.device = device
 
     def forward(self, x, edge_index, edge_weight):
-        for conv, batch_norm,act  in zip(self.convs[:-1],self.batch_norms, self.act):
+        for conv, batch_norm, act  in zip(self.convs[:-1],self.batch_norms, self.act):
         #for conv in self.convs[:-1]:
             x = conv(x, edge_index, edge_weight)
             #x = batch_norm(x)

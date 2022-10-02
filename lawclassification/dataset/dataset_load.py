@@ -8,6 +8,15 @@ from utils.definitions import ROOT_DIR
 import spacy
 import re
 
+def evallist(row):
+
+    cols = ['labels','token_s_hier_id','token_s_hier_att','token_s_hier_tid','token_w_hier_id','token_w_hier_att','token_w_hier_tid']
+
+    for col in cols:
+        row[col] = eval(str(row[col]))
+
+    return row
+
 NLP = spacy.load('en_core_web_lg')
 
 class deep_data(Dataset):
@@ -33,7 +42,7 @@ class deep_data(Dataset):
         else:
             self.dataframe = pd.read_csv(os.path.join(ROOT_DIR,'data',self.name,'interm',typeSplit,typeSplit+'.csv'))
 
-        self.dataframe['labels'] = self.dataframe['labels'].apply(lambda row: eval(str(row)))
+        self.dataframe = self.dataframe.apply(lambda row: evallist(row),axis=1)
 
         with open(os.path.join(os.path.join(ROOT_DIR,'data',self.name,'interm','id2label.json'))) as f:
             self.id2label =  json.load(f)
@@ -45,6 +54,14 @@ class deep_data(Dataset):
 
         self.labels = self.dataframe.iloc[:,0]
         self.text = self.dataframe.iloc[:,1]
+
+        self.token_s_hier_id = self.dataframe.iloc[:,3]
+        self.token_s_hier_att = self.dataframe.iloc[:,4]
+        self.token_s_hier_tid = self.dataframe.iloc[:,5]
+        self.token_w_id = self.dataframe.iloc[:,6]
+        self.token_w_att = self.dataframe.iloc[:,7]
+        self.token_w_tid = self.dataframe.iloc[:,8]
+
         self.max_length = max_length
         self.tokenizer = tokenizer
 
@@ -63,43 +80,30 @@ class deep_data(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        #single_label:
-        text1 = self.text[idx]
+        labels1 = torch.tensor(self.labels[idx],dtype=torch.int64)
 
         if self.flag_hierarchical:
 
-            #esse aqui é especifico do scotus:
-            #text1 = re.split('\n{2,}', text1) #achar um 'sentence' tokenizer padrão e tacar aqui <--- tem q retornar outra lista
-            text1 = [str(text) for text in NLP(text1).sents]
+            token_s_hier_id1 = torch.tensor(self.token_s_hier_id[idx],dtype=torch.int32).squeeze(0)
+            token_s_hier_att1 = torch.tensor(self.token_s_hier_att[idx],dtype=torch.int32).squeeze(0)
+            token_s_hier_tid1 = torch.tensor(self.token_s_hier_tid[idx],dtype=torch.int32).squeeze(0)
 
-            case_encodings = self.tokenizer(text1[:self.hier_max_seg], padding='max_length', max_length=self.hier_max_seg_length, truncation=True)
-
-            inputIds = torch.tensor(case_encodings['input_ids'] + [[0] * self.hier_max_seg_length] * (self.hier_max_seg - len(case_encodings['input_ids'])),dtype=torch.int32)
-            attentionMask = torch.tensor(case_encodings['attention_mask'] + [[0] * self.hier_max_seg_length] * (self.hier_max_seg - len(case_encodings['attention_mask'])),dtype=torch.int32)
-            tokenTypeIds = torch.tensor(case_encodings['token_type_ids'] + [[0] * self.hier_max_seg_length] * (self.hier_max_seg - len(case_encodings['token_type_ids'])),dtype=torch.int32)
-
-            batch = {'input_ids' : inputIds.squeeze(0),
-                     'attention_mask': attentionMask.squeeze(0),
-                     'token_type_ids': tokenTypeIds.squeeze(0),
-                     'labels': torch.tensor(self.labels[idx])
+            batch = {'input_ids' : token_s_hier_id1,
+                     'attention_mask': token_s_hier_att1,
+                     'token_type_ids': token_s_hier_tid1,
+                     'labels': labels1
                     }
 
         else:
 
-            inputs = self.tokenizer.encode_plus(
-                            text1 ,
-                            padding='max_length',
-                            add_special_tokens=True,
-                            return_attention_mask=True,
-                            max_length=self.max_length,
-                            return_tensors = 'pt',
-                            truncation=True,
-                        )           
+            token_w_id1 = torch.tensor(self.token_w_id[idx],dtype=torch.int32).squeeze(0)
+            token_w_att1 = torch.tensor(self.token_w_att[idx],dtype=torch.int32).squeeze(0)
+            token_w_tid1 = torch.tensor(self.token_w_tid[idx],dtype=torch.int32).squeeze(0)
 
-            batch = {'input_ids':inputs["input_ids"].squeeze(0).to(dtype=torch.int32),
-                    'attention_mask': inputs["attention_mask"].squeeze(0).to(dtype=torch.int32),
+            batch = {'input_ids':token_w_id1,
+                    'attention_mask': token_w_att1,
                     #'token_type_ids': inputs["token_type_ids"].squeeze(0),# <--- fix for other models
-                    'labels': torch.tensor(self.labels[idx])
+                    'labels': labels1
                     }
 
         return batch

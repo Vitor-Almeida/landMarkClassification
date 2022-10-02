@@ -55,6 +55,10 @@ def csv_to_dmMatrix(dataname:str,problem_type:str):
         dfTrainCSV = pd.read_csv(pathTrainCSV)
         dfValCSV = pd.read_csv(pathValDMCSV)
 
+        dfTestCSV = dfTestCSV[['labels','text']]
+        dfTrainCSV = dfTrainCSV[['labels','text']]
+        dfValCSV = dfValCSV[['labels','text']]
+
         if problem_type == 'multi_label_classification':
             dfTestCSV['labels'] = dfTestCSV['labels'].apply(eval)
             dfTrainCSV['labels'] = dfTrainCSV['labels'].apply(eval)

@@ -1,4 +1,5 @@
 import random
+from tabnanny import verbose
 import numpy as np
 from dataset.dataset_load import deep_data
 from models.hier_models import HierarchicalBert
@@ -20,6 +21,7 @@ class deep_models():
         self.dataname = dataname
         self.model_name = model_name
         self.model_path = os.path.join(ROOT_DIR,'lawclassification','models','external',self.model_name)
+        self.finetunepath = os.path.join(ROOT_DIR,'lawclassification','models','internal',self.dataname,self.model_name)
         self.dropout = dropout
         self.problem_type = problem_type
         self.batchsize = batchsize
@@ -95,7 +97,7 @@ class deep_models():
 
         self.num_labels = self.num_labels_train
 
-        self.total_steps = len(self.train_dataloader) * epochs
+        self.total_steps = len(self.train_dataloader) * self.epochs
 
         #da pra colocar tipo um config.json aqui que da pra mudar as parada de dropout, requires grad:
         self.model = AutoModelForSequenceClassification.from_pretrained(self.model_path, 
@@ -108,7 +110,7 @@ class deep_models():
                                                                         output_attentions = False, #?
                                                                         output_hidden_states = False, #?
                                                                         ################
-                                                                        torch_dtype = torch.float32 #fica tudo 16 bytes, o que nao é bom?
+                                                                        torch_dtype = torch.float32 
                                                                         #classifier_dropout = self.dropout, ###?
                                                                         #hidden_dropout_prob = self.dropout, ###?
                                                                         #attention_probs_dropout_prob = self.dropout
@@ -124,38 +126,6 @@ class deep_models():
 
         self.model.to(self.device)
 
-        ##ARRUMAR :
-        ########## AQUI TEM QUE CONGELAR DEPENDENDO DO INPUT #############
-
-        # for _,param in enumerate(list(self.model.named_parameters())):
-
-        #     #separar 1 pra cada, nao tem muito oq fazer, talvez aqui seja o lugar onde vai setar os learning rate tmb talvez.
-
-        #     if self.model.base_model_prefix == 'bert' or self.model.base_model_prefix == 'roberta' or self.model.base_model_prefix == 'longformer':
-
-        #         if param[0].find(f'{self.model.base_model_prefix}.encoder.layer.11.') != -1 or param[0].find('classifier') != -1:
-        #             param[1].requires_grad = True #GRADIENT SERÁ CALCULADO
-        #         else:
-        #             param[1].requires_grad = False #NAO SERÁ CALCULADO
-
-        #     elif self.model.base_model_prefix == 'albert-base-v2':
-
-        #         if param[0].find(f'albert_layer_groups.0.albert_layers.0') != -1 or param[0].find('classifier') != -1:
-        #             param[1].requires_grad = True #GRADIENT SERÁ CALCULADO
-        #         else:
-        #             param[1].requires_grad = False #NAO SERÁ CALCULADO
-
-        #     elif self.model.base_model_prefix == 'distilbert':
-
-        #         if param[0].find('distilbert.transformer.layer.5') != -1 or param[0].find('classifier') != -1: #tirar a camada pre_classifier ??
-        #             param[1].requires_grad = True #GRADIENT SERÁ CALCULADO
-        #         else:
-        #             param[1].requires_grad = False #NAO SERÁ CALCULADO
-
-        #self.model.dropout.p = self.dropout #aonde fica os dropout?
-
-        ##################################################################
-
         self.optimizer = torch.optim.AdamW(set_learning_rates(self.lr,
                                                               self.decay_lr,
                                                               self.model,
@@ -163,13 +133,19 @@ class deep_models():
                                                               self.qtyFracLayers,
                                                               None)) 
                 
-        #Slanted Triangular Learning Rates
-        def lr_lambda(current_step, 
-                      num_warmup_steps=int(self.warmup_size * self.total_steps),
-                      num_training_steps = self.total_steps):
-        
-            if current_step < num_warmup_steps:
-                return float(current_step) / float(max(1, num_warmup_steps))
-            return max(0.0, float(num_training_steps - current_step) / float(max(1, num_training_steps - num_warmup_steps)))
 
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer,lr_lambda,last_epoch=-1)
+        self.scheduler1 = torch.optim.lr_scheduler.LinearLR(self.optimizer, 
+                                                            start_factor=0.1, 
+                                                            end_factor=1, 
+                                                            total_iters=int(self.warmup_size * self.epochs))
+
+        self.scheduler2 = torch.optim.lr_scheduler.LinearLR(self.optimizer, 
+                                                            start_factor=1.0, 
+                                                            end_factor=0.1,
+                                                            total_iters=self.epochs-(int(self.warmup_size * self.epochs))
+                                                            )
+
+        self.scheduler = torch.optim.lr_scheduler.SequentialLR(self.optimizer, 
+                                                               schedulers = [self.scheduler1,self.scheduler2],
+                                                               milestones= [int(self.warmup_size * self.epochs)]
+                                                               )

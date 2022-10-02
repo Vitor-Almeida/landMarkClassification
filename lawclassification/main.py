@@ -28,6 +28,8 @@ def main():
 
         expSubName = '[Deep_Hier]' if bool(experiment['hierarchical']) else '[Deep]'
 
+        #colocar uma condicao aqui pra rodar o tokenizer no csv pelo modelo.
+
         #outro tipo de experimento poderia ser dataname+modelo+'busca hyper'
         mlflow.set_experiment(expSubName + experiment['dataname'])
 
@@ -79,6 +81,7 @@ def main():
         gc.collect()
         torch.cuda.empty_cache()
 
+    #bert gcn
     for idx,experiment in enumerate(expDicBertGCN):
         print(f'Starting Bert+GNN experiments: {idx+1}/{len(expDicBertGCN)}')
         print(f'Results are being logged in mlflow ...')

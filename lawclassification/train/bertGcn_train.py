@@ -62,20 +62,23 @@ class bertGcn_Train():
             #model = model.to(self.device)
             self.model.bertGcnModel.eval()
             cls_list = []
-            for i, batch in enumerate(self.model.updateDataLoader):
+            for batch in self.model.updateDataLoader:
                 input_ids = batch[0].to(self.model.device)
                 attention_mask = batch[1].to(self.model.device)
+                token_type_ids = batch[2].to(self.model.device)
+
+                #colocar só train?
 
                 with torch.autocast(device_type=self.model.device.type, dtype=torch.float16, enabled=True):
-                    output = self.model.bertGcnModel.bert_model(input_ids=input_ids, attention_mask=attention_mask)[0][:, 0]
+                    output = self.model.bertGcnModel.bert_model(input_ids=input_ids, 
+                                                                attention_mask=attention_mask, 
+                                                                token_type_ids=token_type_ids)[0][:, 0]
 
                 cls_list.append(output.cpu())
             cls_feat = torch.cat(cls_list, axis=0)
         self.model.dataset = self.model.dataset.to('cpu')
-        self.model.dataset.x[self.model.dataset.docmask] = cls_feat
-        #self.model.dataset['x'].to_sparse()
+        self.model.dataset.x[self.model.dataset.docmask] = cls_feat #sera que ta na mesma ordem?
         torch.cuda.empty_cache()
-        #g.ndata['cls_feats'][self.model.dataset.train_mask] = cls_feat
         return None
 
     def train(self):
@@ -88,13 +91,13 @@ class bertGcn_Train():
 
             y = batch.y[:batch.batch_size]
             y_hat, cls_feats = self.model.bertGcnModel(batch.x,
-                                            batch.n_id,
-                                            batch.edge_index,
-                                            batch.edge_weight, 
-                                            batch.input_ids[:batch.batch_size], 
-                                            batch.attention_mask[:batch.batch_size], 
-                                            batch.batch_size,
-                                            None)
+                                                       batch.n_id,
+                                                       batch.edge_index,
+                                                       batch.edge_weight, 
+                                                       batch.token_w_hier_id[:batch.batch_size], 
+                                                       batch.token_w_hier_att[:batch.batch_size], 
+                                                       batch.batch_size,
+                                                       None)
 
             loss = self.criterion(y_hat, y)
             loss.backward()
@@ -102,14 +105,15 @@ class bertGcn_Train():
             torch.nn.utils.clip_grad_norm_(self.model.bertGcnModel.parameters(), 1.0)
 
             self.model.optimizer.step()
-            self.model.scheduler.step()
-
+            
             self.metricsTrainBatch(y_hat, y.int())
 
-            lossTrain += float(loss) * batch.batch_size
+            lossTrain += loss.item() * batch.batch_size
             total_examples += batch.batch_size
 
-            self.model.dataset.x[batch.n_id[:batch.batch_size]] = cls_feats.detach().clone()
+            #self.model.dataset.x[batch.n_id[:batch.batch_size]] = cls_feats.detach().clone()
+
+        self.model.scheduler.step()
 
         metric = self.metricsTrainBatch.compute()
         mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()})
@@ -130,19 +134,19 @@ class bertGcn_Train():
 
                 y = batch.y[:batch.batch_size]
                 y_hat, _ = self.model.bertGcnModel(batch.x,
-                                                batch.n_id,
-                                                batch.edge_index,
-                                                batch.edge_weight, 
-                                                batch.input_ids[:batch.batch_size], 
-                                                batch.attention_mask[:batch.batch_size], 
-                                                batch.batch_size,
-                                                None)
+                                                   batch.n_id,
+                                                   batch.edge_index,
+                                                   batch.edge_weight, 
+                                                   batch.token_w_hier_id[:batch.batch_size], 
+                                                   batch.token_w_hier_att[:batch.batch_size], 
+                                                   batch.batch_size,
+                                                   None)
 
                 loss = self.criterion(y_hat, y)
 
                 self.metricsTestEpoch(y_hat, y.int())
 
-                lossTest += float(loss) * batch.batch_size
+                lossTest += loss.item() * batch.batch_size
                 total_examples += batch.batch_size
 
             metric = self.metricsTestEpoch.compute()
@@ -152,39 +156,39 @@ class bertGcn_Train():
 
         return lossTest/total_examples
 
-    def test(self,epoch_i):
+    def val_val(self,epoch_i):
+        
+        self.model.bertGcnModel.eval()
         with torch.no_grad():
-            self.model.bertGcnModel.eval()
-            #y_hat = self.model.bertGcnModel.inference(self.model.dataset.x, self.model.subgraphLoader).to(self.device)
-            y_hat, _ = self.model.bertGcnModel(self.model.dataset.x, None, None, None, None, None, None, self.model.subgraphLoader)
-            y = self.model.dataset.y.to(y_hat.device)
 
-            lossTrain = self.logCrit(y_hat[self.model.dataset.train_mask], y[self.model.dataset.train_mask])
-            lossTest = self.logCrit(y_hat[self.model.dataset.test_mask], y[self.model.dataset.test_mask])
-            lossVal = self.logCrit(y_hat[self.model.dataset.val_mask], y[self.model.dataset.val_mask])
+            lossTest = total_examples = 0
 
-            self.metricsTrainEpoch(y_hat[self.model.dataset.train_mask], y[self.model.dataset.train_mask].int())
-            metric = self.metricsTrainEpoch.compute()
-            mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},epoch_i+1)
-            mlflow.log_metrics({'Train_Epoch_loss':round(lossTrain.item(),4)},epoch_i+1)
-            metric = self.metricsTrainEpoch.reset()
+            for batch in self.model.valLoader:
+                self.model.optimizer.zero_grad()
 
-            self.metricsTestEpoch(y_hat[self.model.dataset.test_mask], y[self.model.dataset.test_mask].int())
-            metric = self.metricsTestEpoch.compute()
-            mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},epoch_i+1)
-            mlflow.log_metrics({'Test_Epoch_loss':round(lossTest.item(),4)},epoch_i+1)
+                y = batch.y[:batch.batch_size]
+                y_hat, _ = self.model.bertGcnModel(batch.x,
+                                                   batch.n_id,
+                                                   batch.edge_index,
+                                                   batch.edge_weight, 
+                                                   batch.token_w_hier_id[:batch.batch_size], 
+                                                   batch.token_w_hier_att[:batch.batch_size], 
+                                                   batch.batch_size,
+                                                   None)
 
-            earlyStopCriteria = lossTest.item()
+                loss = self.criterion(y_hat, y)
 
-            metric = self.metricsTestEpoch.reset()
+                self.metricsValEpoch(y_hat, y.int())
 
-            self.metricsValEpoch(y_hat[self.model.dataset.val_mask], y[self.model.dataset.val_mask].int())
+                lossTest += loss.item() * batch.batch_size
+                total_examples += batch.batch_size
+
             metric = self.metricsValEpoch.compute()
             mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},epoch_i+1)
-            mlflow.log_metrics({'Val_Epoch_loss':round(lossVal.item(),4)},epoch_i+1)
+            mlflow.log_metrics({'Test_Epoch_loss':round(lossTest/total_examples,4)},epoch_i+1)
             metric = self.metricsValEpoch.reset()
 
-            return earlyStopCriteria
+        return lossTest/total_examples
 
     def fit_and_eval(self):
 
@@ -203,6 +207,7 @@ class bertGcn_Train():
                 earlyStopCriteria = curTestLoss
 
                 if self.earlyStopper.early_stop(earlyStopCriteria):
+                    self.val_val(epoch_i)
                     break
 
         mlflow.log_metrics({'Minute Duration':round((datetime.now() - self.starttime).total_seconds()/60,0)},self.model.epochs)

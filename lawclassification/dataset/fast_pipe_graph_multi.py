@@ -1,3 +1,4 @@
+from zipfile import Path
 import pandas as pd
 from utils.definitions import ROOT_DIR
 import os
@@ -10,6 +11,7 @@ from torch_geometric import utils as U
 from datetime import datetime
 import gc
 import torch
+from transformers import BertTokenizerFast, PreTrainedTokenizerFast, BatchEncoding
 import torch_sparse as S
 import pickle
 from utils.helper_funs import hug_tokenizer
@@ -21,23 +23,58 @@ def _split_listN(a, n):
     k, m = divmod(len(a), n)
     return (a[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n))
 
-def _tokenizer(df:pd.DataFrame, vocab_size:int):
+def _tokenizer(df:pd.DataFrame, vocab_size:int, train:bool):
 
-    bertTokenizer , trainer = hug_tokenizer(vocab_size)
-
-    bertTokenizer.train_from_iterator(df['text'], trainer=trainer)
+    if train:
+        bertTokenizer , trainer = hug_tokenizer(vocab_size)
+        bertTokenizer.train_from_iterator(df['text'], trainer=trainer)
+    else:
+        #PreTrainedTokenizerFast
+        bertTokenizer = BertTokenizerFast.from_pretrained(os.path.join(ROOT_DIR,'lawclassification','models','external','nlpaueb.legal-bert-base-uncased'))
+        #bertTokenizer = BertTokenizer.from_pretrained(os.path.join(ROOT_DIR,'lawclassification','models','external','bert-base-uncased'))
+        #bertTokenizer = BertTokenizer.from_pretrained(os.path.join(ROOT_DIR,'lawclassification','models','external','ulysses-camara.legal-bert-pt-br'))
+        #bertTokenizer = BertTokenizer.from_pretrained(os.path.join(ROOT_DIR,'lawclassification','models','external','neuralmind.bert-base-portuguese-cased'))
 
     vocabToId = bertTokenizer.get_vocab()
     vocabVec = list(bertTokenizer.get_vocab().keys())
     idToVocab = {idx:label for label,idx in vocabToId.items()}
 
-    encodedText = df['text'].apply(lambda row: bertTokenizer.encode(row,add_special_tokens=False).ids)
+    if train:
+        encodedText = df['text'].apply(lambda row: bertTokenizer.encode(row,add_special_tokens=False).ids)
+    else:
+        encodedText = df['text'].apply(lambda row: bertTokenizer.encode(row,add_special_tokens=False))#,add_special_tokens=False,padding='max_length',max_length=512,truncation=True))
 
     vocabMaps = [vocabVec,vocabToId,idToVocab]
 
     return encodedText, vocabMaps
 
-def _load_csv(path: str, maxRows: int) -> pd.DataFrame:
+
+def _load_csv_bertgcn(path: str) -> pd.DataFrame:
+    '''load split csv file from other the deep/xgboost pipe and get ready for the graph pipe
+    '''
+    def evallist(row):
+
+        cols = ['labels','token_s_hier_id','token_s_hier_att','token_s_hier_tid','token_w_hier_id','token_w_hier_att','token_w_hier_tid']
+
+        for col in cols:
+            row[col] = eval(str(row[col]))
+
+        return row
+
+    dfTrain = pd.read_csv(os.path.join(ROOT_DIR,'data',path,'interm','train','train.csv'))
+    dfTrain['split'] = 'train'
+    dfTest = pd.read_csv(os.path.join(ROOT_DIR,'data',path,'interm','test','test.csv'))
+    dfTest['split'] = 'test'
+    dfVal = pd.read_csv(os.path.join(ROOT_DIR,'data',path,'interm','val','val.csv'))
+    dfVal['split'] = 'val'
+
+    df = pd.concat([dfTrain,dfTest,dfVal],ignore_index=True)
+    df = df.apply(lambda row: evallist(row),axis=1)
+
+    return df
+
+
+def _load_csv(path: str, maxRows: int, train: bool) -> pd.DataFrame:
     '''load split csv file from other the deep/xgboost pipe and get ready for the graph pipe
     '''
 
@@ -50,6 +87,8 @@ def _load_csv(path: str, maxRows: int) -> pd.DataFrame:
 
     df = pd.concat([dfTrain,dfTest,dfVal],ignore_index=True)
 
+    df = df[['labels','text','split']]
+
     numChar = sum(len(s) for s in df['text'])
 
     #eurlex_lexbench , scotus_lexbench e o tj
@@ -58,7 +97,7 @@ def _load_csv(path: str, maxRows: int) -> pd.DataFrame:
     elif numChar > 300_000_000: #limite da memoria
         df['text'] = df['text'].apply(lambda row: row[:int(len(row)/2)])
 
-    df['text_token'],vocabMaps = _tokenizer(df,vocab_size=300000)
+    df['text_token'],vocabMaps = _tokenizer(df,vocab_size=300000,train = train)
     
     df = df.head(maxRows)
     df.reset_index(inplace=True,drop=True)
@@ -259,17 +298,7 @@ def _parallel_load(docsArrThread, windowSize, vocabMaps):
     #edgeDf = edgeDf[edgeDf['weight']>0]
     edgeDf.loc[edgeDf['src']==edgeDf['tgt'], 'weight'] = 1.0
     
-     #isso tira a simetria da adj?
-    
     edgeDf = edgeDf[['src','tgt','weight']]
-
-    #add adj symmetric: já é simetrico.
-    #_edgeDf = edgeDf.copy(deep=True)
-    #_edgeDf.rename(columns={'src':'src_'},inplace=True)
-    #_edgeDf.rename(columns={'tgt':'src'},inplace=True)
-    #_edgeDf.rename(columns={'src_':'tgt'},inplace=True)
-
-    #edgeDf = pd.concat([edgeDf,_edgeDf],ignore_index=True).drop_duplicates()
 
     idToVocab=vocabMaps[2]
     edgeDf['label'] = 999999
@@ -279,13 +308,13 @@ def _parallel_load(docsArrThread, windowSize, vocabMaps):
 
     return edgeDf
 
-def _create_edge_df(path: str, maxRows: int, windowSize: int, nThreads:int) -> pd.DataFrame:
+def _create_edge_df(path: str, maxRows: int, windowSize: int, nThreads:int, train:bool) -> pd.DataFrame:
 
     multi2label = []
 
     if not os.path.exists(os.path.join(ROOT_DIR,'data',path,'interm','pre_graph.csv')):
 
-        df, vocabMaps, multi2label = _load_csv(path,maxRows)
+        df, vocabMaps, multi2label = _load_csv(path,maxRows,train)
 
     else:
 
@@ -294,6 +323,8 @@ def _create_edge_df(path: str, maxRows: int, windowSize: int, nThreads:int) -> p
         f = open(os.path.join(ROOT_DIR,'data',path,'interm','vocabMaps.pickle'),'rb')
         vocabMaps = pickle.load(f)
         f.close()
+
+        df = df[['labels','text','split','text_token']]
 
         if os.path.exists(os.path.join(ROOT_DIR,'data',path,'interm','multi2label.pickle')):
 
@@ -308,25 +339,27 @@ def _create_edge_df(path: str, maxRows: int, windowSize: int, nThreads:int) -> p
 
     graphDf = pd.concat([edgeDf,wordDocDf],ignore_index=True)
 
-    #em algumas bases sim, em outras nao: (?)
-    #graphDf['weight'] = preprocessing.RobustScaler().fit_transform(graphDf[['weight']])
-
-    #mini = min(preprocessing.RobustScaler().fit_transform(graphDf[['weight']]))
-    #if mini >= 0:
-    #    mini = 0
-    #graphDf['weight'] = preprocessing.RobustScaler().fit_transform(graphDf[['weight']]) - mini
-
-    #import matplotlib.pyplot as plt
-    #plt.hist(np.array(graphDf['weight']), 100, density=True)
-    #plt.savefig("matplotlib.png")
-    #plt.close()
-
     #todo:
     #tirando palavras do TFIDF (doc-word), pois não existem no word->word, por causa de um possivel pmi = 0 ou pmi < 0.2 (olhar.)
 
+    ############## AJ #########################
+    #from tqdm.auto import tqdm
+    #dicHashTable = {}
+    #newSummedList = []
+    #for n in tqdm(graphDf.values.tolist()):
+    #    if (n[0],n[1]) not in dicHashTable:
+    #        newSummedList.append(n)
+    #        dicHashTable[(n[0],n[1])] = 1
+    #        dicHashTable[(n[1],n[0])] = 1
+    #graphDf = pd.DataFrame(newSummedList,columns=['src','tgt','weight','label','splits'])
+    #del newSummedList
+    #del dicHashTable
+    #gc.collect()
+    ###########################################
+
     return graphDf, multi2label
 
-def _create_pygraph_data(graphDf:pd.DataFrame,multi2label) -> None:
+def _create_pygraph_data(graphDf:pd.DataFrame,multi2label,path:str) -> None:
 
     #graphDf = graphDf.sample(frac=1)
     graphDf.dropna(inplace=True) #pode ter algum termo como #N/A como token?
@@ -338,7 +371,7 @@ def _create_pygraph_data(graphDf:pd.DataFrame,multi2label) -> None:
     allNodesSrc = np.array(graphDf['src'],dtype=np.str_)
     allNodesTgt = np.array(graphDf['tgt'],dtype=np.str_)
 
-    np.testing.assert_array_equal(np.array(graphDf['src'].sort_values()),np.array(graphDf['tgt'].sort_values()))
+    #np.testing.assert_array_equal(np.array(graphDf['src'].sort_values()),np.array(graphDf['tgt'].sort_values()))
 
     wgtEdges = np.array(graphDf['weight'])
 
@@ -405,29 +438,105 @@ def _create_pygraph_data(graphDf:pd.DataFrame,multi2label) -> None:
 
     homophily = round(U.homophily(edgeIndex,homoLabels),4)
 
-    return data.Data(x = oneHotMtx,
-                     edge_index = edgeIndex,
-                     edge_weight = wgtEdges,
-                     indexMask = indexMask,
-                     homoLabels = homoLabels,
-                     #edge_attr = edgeAttr,
-                     homophily = homophily,
-                     y = labels,
-                     num_classes = numClasses,
-                     test_mask = testMask,
-                     train_mask = trainMask,
-                     val_mask = valMask)
+    #testar: Colocar is_sorted nos loader:
+    edgeIndex, wgtEdges = U.coalesce(edgeIndex,wgtEdges,sort_by_row=False,reduce='max')
 
-def fast_pipe_graph(path: str, maxRows: int, windowSize: int, nThreads:int) -> None:
+    textGcnData = data.Data(x = oneHotMtx,
+                            edge_index = edgeIndex,
+                            edge_weight = wgtEdges,
+                            #indexMask = indexMask,
+                            #homoLabels = homoLabels,
+                            #edge_attr = edgeAttr,
+                            homophily = homophily,
+                            y = labels,
+                            num_classes = numClasses,
+                            test_mask = testMask,
+                            train_mask = trainMask,
+                            val_mask = valMask)
+
+    df = _load_csv_bertgcn(path=path)
+
+    tmpIdx = []
+    tmpInsList = []
+    tmpAtList = []
+    tmpTyIdList = []
+
+    tmpInsListHier = []
+    tmpAtListHier = []
+    tmpTyIdListHier = []
+
+    #batchIndexT = np.expand_dims(np.arange(0,len(df)),axis=1)
+    colAtList = len(df['token_w_hier_id'][0])
+
+    #checar se a ordem eh a mesma
+    for n in indexMask:
+        if n.item() == 999999:
+            tmpIdx.append(np.array([[999999]]))
+            tmpInsList.append(np.array([[0]*colAtList]))
+            tmpAtList.append(np.array([[0]*colAtList]))
+            tmpTyIdList.append(np.array([[0]*colAtList]))
+
+            tmpInsListHier.append(np.array([[[0]*128]*64]))
+            tmpAtListHier.append(np.array([[[0]*128]*64]))
+            tmpTyIdListHier.append(np.array([[[0]*128]*64]))
+
+        else:
+            tmpInsList.append(np.expand_dims(np.array(df['token_w_hier_id'][n.item()]),axis=0))
+            tmpAtList.append(np.expand_dims(np.array(df['token_w_hier_att'][n.item()]),axis=0))
+            tmpTyIdList.append(np.expand_dims(np.array(df['token_w_hier_tid'][n.item()]),axis=0))
+
+            tmpInsListHier.append(np.expand_dims(np.array(df['token_s_hier_id'][n.item()]),axis=0))
+            tmpAtListHier.append(np.expand_dims(np.array(df['token_s_hier_att'][n.item()]),axis=0))
+            tmpTyIdListHier.append(np.expand_dims(np.array(df['token_s_hier_tid'][n.item()]),axis=0))
+
+
+    tmpInsList = torch.tensor(np.concatenate(tmpInsList),dtype=torch.int32)
+    tmpAtList = torch.tensor(np.concatenate(tmpAtList),dtype=torch.int32)
+    tmpTyIdList = torch.tensor(np.concatenate(tmpTyIdList),dtype=torch.int32)
+
+    tmpInsListHier = torch.tensor(np.concatenate(tmpInsListHier),dtype=torch.int32)
+    tmpAtListHier = torch.tensor(np.concatenate(tmpAtListHier),dtype=torch.int32)
+    tmpTyIdListHier = torch.tensor(np.concatenate(tmpTyIdListHier),dtype=torch.int32)
+
+    featMatrix = torch.tensor([[0.0]*768 for _ in range(0,len(labels))],dtype=torch.float32)
+
+    bertGcnData = data.Data(x = featMatrix,
+                            edge_index = edgeIndex,
+                            edge_weight = wgtEdges,
+                            #indexMask = indexMask,
+                            #homoLabels = homoLabels,
+                            #edge_attr = edgeAttr,
+                            homophily = homophily,
+                            y = labels,
+                            num_classes = numClasses,
+                            test_mask = testMask,
+                            train_mask = trainMask,
+                            val_mask = valMask,
+                            token_w_hier_id = tmpInsList,
+                            token_w_hier_att = tmpAtList,
+                            token_w_hier_tid = tmpTyIdList,
+                            token_s_hier_id = tmpInsListHier,
+                            token_s_hier_att = tmpAtListHier,
+                            token_s_hier_tid = tmpTyIdListHier
+                            )
+
+
+    return textGcnData , bertGcnData
+
+def fast_pipe_graph(path: str, maxRows: int, windowSize: int, nThreads:int, train:bool) -> None:
 
     print('Dataset: ',path)
     print("Creating graph dataset... this might take a while", datetime.now().strftime("%H:%M:%S"))
 
-    graphDf, multi2label = _create_edge_df(path, maxRows, windowSize, nThreads)
+    graphDf, multi2label = _create_edge_df(path, maxRows, windowSize, nThreads, train)
 
-    pyData = _create_pygraph_data(graphDf, multi2label)
+    textGcnData, bertGcnData = _create_pygraph_data(graphDf, multi2label, path)
 
     with open(os.path.join(ROOT_DIR,'data',path,'pygraph.pickle'), 'wb') as f:
-        pickle.dump(pyData, f)
+        pickle.dump(textGcnData, f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data',path,'pygraph_bertGcn.pickle'), 'wb') as f:
+        pickle.dump(bertGcnData, f)
+        f.close()
 
     return None

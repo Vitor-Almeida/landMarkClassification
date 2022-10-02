@@ -2,9 +2,11 @@ from tqdm.auto import tqdm
 import torch
 import gc
 from models.deep_models import deep_models
-from utils.deep_metrics import metrics_config
+from utils.deep_metrics import metrics_config, metrics_config_special, f1ajust_lexglue
 from utils.helper_funs import save_model
+import torch.nn.functional as F
 import mlflow
+
 
 class deep_train():
     """
@@ -39,6 +41,12 @@ class deep_train():
         _ = metrics_config(num_labels = self.model.num_labels,
                            device = self.model.device,
                            problem_type = self.model.problem_type)
+
+        _special = metrics_config_special(num_labels = self.model.num_labels+1,
+                                          device = self.model.device)
+                
+        self.metricsTestEpochSpecial = _special.clone(prefix='Test_Special_')
+        self.metricsValEpochSpecial = _special.clone(prefix='Val_Special_')
 
         self.metricsTrainEpoch = _.clone(prefix='Train_Epoch_')
         #self.metricsTrainBatch = _.clone(prefix='Train_Batch_')
@@ -84,7 +92,7 @@ class deep_train():
             torch.nn.utils.clip_grad_norm_(self.model.model.parameters(), 1.0)
             
             scaler.step(self.model.optimizer) #self.model.optimizer.step()
-            self.model.scheduler.step()
+            #self.model.scheduler.step()
 
             #torch.isnan(x)
             #torch.isinf(x)
@@ -97,7 +105,7 @@ class deep_train():
             epochLoss += loss * batch['input_ids'].size()[1]
             batchItens += batch['input_ids'].size()[1]
 
-        #self.model.scheduler.step()
+        self.model.scheduler.step()
 
         epochLoss = epochLoss / batchItens
 
@@ -114,11 +122,12 @@ class deep_train():
                 batch = {k: v.to(self.model.device) for k, v in batch.items()}
 
                 with torch.autocast(device_type=self.model.device.type, dtype=torch.float16, enabled=self.flag_mixed_precision):
-                #with torch.autocast(device_type=self.model.device.type, dtype=torch.float16, enabled=True):
                     outputs = self.model.model(**batch)
 
-                #lexGlue tem q fazer um if self.model.dataname == 'unfair-tos', cat([1] ou [0] no começo do vetor se a label for [0,0,0..0])
-                #problema q talvez vai bugar a definição das métricas
+                if self.model.dataname in ['ecthr_b_lexbench','ecthr_a_lexbench','unfair_lexbench']:
+                    #out,lab = f1ajust_lexglue(outputs.logits.detach().clone(), batch['labels'].int().detach().clone(),self.model.device)
+                    out,lab = f1ajust_lexglue(outputs.logits, batch['labels'].int(),self.model.device)
+                    self.metricsTestEpochSpecial(out, lab)
 
                 self.metricsTestEpoch(outputs.logits, batch['labels'].int())
 
@@ -142,7 +151,10 @@ class deep_train():
                 with torch.autocast(device_type=self.model.device.type, dtype=torch.float16, enabled=self.flag_mixed_precision):
                     outputs = self.model.model(**batch)
 
-                #self.metricsValBatch(outputs.logits, batch['labels'].int())
+                if self.model.dataname in ['ecthr_b_lexbench','ecthr_a_lexbench','unfair_lexbench']:
+                    out,lab = f1ajust_lexglue(outputs.logits, batch['labels'].int(),self.model.device)
+                    self.metricsValEpochSpecial(out, lab)
+
                 self.metricsValEpoch(outputs.logits, batch['labels'].int())
 
                 epochLoss += outputs.loss * batch['input_ids'].size()[1]
@@ -168,12 +180,24 @@ class deep_train():
             mlflow.log_metrics({'Test_Epoch_loss':round(testLoss,4)},epoch_i+1)
             metric = self.metricsTestEpoch.reset()
 
+            if self.model.dataname in ['ecthr_b_lexbench','ecthr_a_lexbench','unfair_lexbench']:
+                metric = self.metricsTestEpochSpecial.compute()
+                mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},epoch_i+1)
+                metric = self.metricsTestEpochSpecial.reset()
+
             if self.model.earlyStopper.early_stop(testLoss):
-                save_model(self.model, epoch_i)
                 break
 
         valLoss = self.val_loop()
         metric = self.metricsValEpoch.compute()
         mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},self.model.epochs)
-        mlflow.log_metrics({'Val_Epoch_loss':round(valLoss,4)},epoch_i+1)
+        mlflow.log_metrics({'Val_Epoch_loss':round(valLoss,4)},self.model.epochs)
         metric = self.metricsValEpoch.reset()
+
+        if self.model.dataname in ['ecthr_b_lexbench','ecthr_a_lexbench','unfair_lexbench']:
+            metric = self.metricsValEpochSpecial.compute()
+            mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},self.model.epochs)
+            metric = self.metricsValEpochSpecial.reset()
+
+        save_model(self.model, epoch_i)
+        self.model.model.save_pretrained(self.model.finetunepath)

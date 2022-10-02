@@ -4,7 +4,7 @@ import torch
 from torch_geometric.loader import NeighborLoader, ImbalancedSampler
 from models.gcn_models import Text_GCN
 from utils.definitions import ROOT_DIR
-from utils.deep_metrics import metrics_config
+from utils.deep_metrics import metrics_config, metrics_config_special, f1ajust_lexglue
 from utils.helper_funs import EarlyStopping
 import mlflow
 import gc
@@ -31,11 +31,12 @@ class gcn_train():
         torch.manual_seed(self.seedVal)
         torch.cuda.manual_seed_all(self.seedVal)
 
-        self.earlyStopper = EarlyStopping(patience=3, min_delta=0)
+        self.earlyStopper = EarlyStopping(patience=5, min_delta=0)
 
         self.starttime = datetime.now()
+        self.dataname = experiment['dataname']
     
-        f = open(os.path.join(ROOT_DIR,'data',experiment['dataname'],'pygraph.pickle'),'rb')
+        f = open(os.path.join(ROOT_DIR,'data',self.dataname,'pygraph.pickle'),'rb')
         self.dataset = pickle.load(f).to(self.device)
         f.close()
 
@@ -72,19 +73,22 @@ class gcn_train():
 
         self.trainLoader = NeighborLoader(self.dataset, input_nodes=self.dataset.train_mask,
                                           num_neighbors = self.neigh_param, 
-                                          shuffle=True, 
+                                          shuffle=True,
+                                          #is_sorted=True,
                                           batch_size = self.batchSize
                                           )
 
         self.testLoader = NeighborLoader(self.dataset, input_nodes=self.dataset.test_mask,
                                          num_neighbors = self.neigh_param, 
                                          shuffle=False, 
+                                         #is_sorted=True,
                                          batch_size = self.batchSize
                                          )
 
         self.valLoader = NeighborLoader(self.dataset, input_nodes=self.dataset.val_mask,
                                         num_neighbors = self.neigh_param, 
                                         shuffle=False, 
+                                        #is_sorted=True,
                                         batch_size = self.batchSize
                                         )
 
@@ -96,12 +100,24 @@ class gcn_train():
         #                                     #num_workers= 4, persistent_workers = True
         #                                     )
 
-        self.total_steps = len(self.trainLoader) * self.epochs
+        #self.total_steps = len(self.trainLoader) * self.epochs
+        self.total_steps = self.epochs
 
-        self.scheduler = torch.optim.lr_scheduler.LinearLR(self.optimizer, 
-                                                           start_factor=0.1, 
-                                                           end_factor=0.0, 
-                                                           total_iters=int(self.warmup_size * self.total_steps))
+        self.scheduler1 = torch.optim.lr_scheduler.LinearLR(self.optimizer, 
+                                                            start_factor=0.1, 
+                                                            end_factor=1, 
+                                                            total_iters=int(self.warmup_size * self.total_steps))
+
+        self.scheduler2 = torch.optim.lr_scheduler.LinearLR(self.optimizer, 
+                                                            start_factor=1.0, 
+                                                            end_factor=0.1,
+                                                            total_iters=self.epochs-(int(self.warmup_size * self.total_steps))
+                                                            )
+
+        self.scheduler = torch.optim.lr_scheduler.SequentialLR(self.optimizer, 
+                                                               schedulers = [self.scheduler1,self.scheduler2],
+                                                               milestones= [int(self.warmup_size * self.total_steps)]
+                                                               )
 
         #del self.subgraphLoader.data.x, self.subgraphLoader.data.y
         #gc.collect()
@@ -112,10 +128,16 @@ class gcn_train():
                            device = self.model.device,
                            problem_type = self.problemType)
 
+        _special = metrics_config_special(num_labels = self.dataset.num_classes+1,
+                                          device = self.model.device)
+
         self.metricsTrainBatch = _.clone(prefix='Train_Batch_')
         self.metricsTrainEpoch = _.clone(prefix='Train_Epoch_')
         self.metricsTestEpoch = _.clone(prefix='Test_Epoch_')
         self.metricsValEpoch = _.clone(prefix='Val_Epoch_')
+
+        self.metricsTestEpochSpecial = _special.clone(prefix='Test_Special_')
+        self.metricsValEpochSpecial = _special.clone(prefix='Val_Special_')
 
         self.datasetParams = {'num_nodes':self.dataset.x.size()[0],
                               'num_edges':self.dataset.edge_index.size()[1],
@@ -140,7 +162,7 @@ class gcn_train():
         lossTrain = total_examples = 0
 
         for batch in self.trainLoader:
-            self.optimizer.zero_grad(set_to_none=True)
+            self.optimizer.zero_grad()
 
             y = batch.y[:batch.batch_size]
             y_hat = self.model(batch.x, batch.edge_index, batch.edge_weight)[:batch.batch_size]
@@ -151,12 +173,13 @@ class gcn_train():
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
 
             self.optimizer.step()
-            self.scheduler.step()
-
+            
             self.metricsTrainBatch(y_hat, y.int())
 
             lossTrain += loss.item() * batch.batch_size
             total_examples += batch.batch_size
+
+        self.scheduler.step()
 
         metric = self.metricsTrainBatch.compute()
         mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},epoch_i+1)
@@ -165,7 +188,7 @@ class gcn_train():
 
         return None
 
-    def test_test(self,epoch_i):
+    def test(self,epoch_i):
 
         self.model.eval()
 
@@ -180,6 +203,10 @@ class gcn_train():
 
                 self.metricsTestEpoch(y_hat, y.int())
 
+                if self.dataname in ['ecthr_b_lexbench','ecthr_a_lexbench','unfair_lexbench']:
+                    out,lab = f1ajust_lexglue(y_hat, y, self.model.device)
+                    self.metricsTestEpochSpecial(out, lab.int())
+
                 lossTest += loss.item() * batch.batch_size
                 total_examples += batch.batch_size
 
@@ -188,9 +215,14 @@ class gcn_train():
         mlflow.log_metrics({'Test_Epoch_loss':round(lossTest/total_examples,4)},epoch_i+1)
         metric = self.metricsTestEpoch.reset()
 
+        if self.dataname in ['ecthr_b_lexbench','ecthr_a_lexbench','unfair_lexbench']:
+            metric = self.metricsTestEpochSpecial.compute()
+            mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},epoch_i+1)
+            metric = self.metricsTestEpochSpecial.reset()
+
         return lossTest/total_examples
 
-    def val_val(self,epoch_i):
+    def val(self,epoch_i):
 
         self.model.eval()
 
@@ -203,6 +235,10 @@ class gcn_train():
 
                 loss = self.criterion(y_hat, y)
 
+                if self.dataname in ['ecthr_b_lexbench','ecthr_a_lexbench','unfair_lexbench']:
+                    out,lab = f1ajust_lexglue(y_hat, y, self.model.device)
+                    self.metricsValEpochSpecial(out, lab.int())
+
                 self.metricsValEpoch(y_hat, y.int())
 
                 lossVal += loss.item() * batch.batch_size
@@ -213,58 +249,26 @@ class gcn_train():
         mlflow.log_metrics({'Test_Epoch_loss':round(lossVal/total_examples,4)},epoch_i+1)
         metric = self.metricsValEpoch.reset()
 
+        if self.dataname in ['ecthr_b_lexbench','ecthr_a_lexbench','unfair_lexbench']:
+            metric = self.metricsValEpochSpecial.compute()
+            mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},epoch_i+1)
+            metric = self.metricsValEpochSpecial.reset()
+
         return None
-
-    def test(self,epoch_i):
-        with torch.no_grad():
-            self.model.eval()
-
-            y_hat = self.model.inference(self.dataset.x, self.subgraphLoader).to(self.device)
-            y = self.dataset.y.to(y_hat.device)
-
-            lossTrain = self.logCrit(y_hat[self.dataset.train_mask], y[self.dataset.train_mask])
-            lossTest = self.logCrit(y_hat[self.dataset.test_mask], y[self.dataset.test_mask])
-            lossVal = self.logCrit(y_hat[self.dataset.val_mask], y[self.dataset.val_mask])
-
-            self.metricsTrainEpoch(y_hat[self.dataset.train_mask], y[self.dataset.train_mask].int())
-            metric = self.metricsTrainEpoch.compute()
-            mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},epoch_i+1)
-            mlflow.log_metrics({'Train_Epoch_loss':round(lossTrain.item(),4)},epoch_i+1)
-            metric = self.metricsTrainEpoch.reset()
-
-            self.metricsTestEpoch(y_hat[self.dataset.test_mask], y[self.dataset.test_mask].int())
-            metric = self.metricsTestEpoch.compute()
-            mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},epoch_i+1)
-            mlflow.log_metrics({'Test_Epoch_loss':round(lossTest.item(),4)},epoch_i+1)
-
-            earlyStopCriteria = lossTest.item()
-
-            metric = self.metricsTestEpoch.reset()
-
-            self.metricsValEpoch(y_hat[self.dataset.val_mask], y[self.dataset.val_mask].int())
-            metric = self.metricsValEpoch.compute()
-            mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},epoch_i+1)
-            mlflow.log_metrics({'Val_Epoch_loss':round(lossVal.item(),4)},epoch_i+1)
-            metric = self.metricsValEpoch.reset()
-
-            return earlyStopCriteria
 
     def fit_and_eval(self):
 
         for epoch_i in tqdm(range(self.epochs)):
             self.train(epoch_i)
 
-            #loss at the begining is really weird in GCNs:
-
-            #curTestLoss = self.test(epoch_i)
-            curTestLoss = self.test_test(epoch_i)
+            curTestLoss = self.test(epoch_i)
 
             if epoch_i > 3:
                 
                 earlyStopCriteria = curTestLoss
 
                 if self.earlyStopper.early_stop(earlyStopCriteria):
-                    self.val_val(epoch_i)
+                    self.val(epoch_i)
                     break
 
         mlflow.log_metrics({'Minute Duration':round((datetime.now() - self.starttime).total_seconds()/60,0)},self.epochs)
