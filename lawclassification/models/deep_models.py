@@ -1,27 +1,27 @@
 import random
-from tabnanny import verbose
 import numpy as np
 from dataset.dataset_load import deep_data
 from models.hier_models import HierarchicalBert
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from transformers import AutoModelForSequenceClassification
+from transformers import PreTrainedModel, BertConfig
 import torch
 from torch.utils.data import DataLoader
 import os
 from utils.definitions import ROOT_DIR
 from transformers import logging
-from utils.helper_funs import EarlyStopping, set_learning_rates
+from utils.helper_funs import EarlyStopping, set_learning_rates, set_new_learning_rates
 
 class deep_models():
+
     def __init__(self, model_name, batchsize, max_char_length, lr, epochs, warmup_size, dropout, dataname,
                  problem_type, weight_decay, decay_lr, qty_layer_unfreeze, hierarchical, hier_max_seg, hier_max_seg_length):
-        super(deep_models, self).__init__()
+        super().__init__()
 
         logging.set_verbosity_error() #remove transformers warnings.
 
         self.dataname = dataname
         self.model_name = model_name
         self.model_path = os.path.join(ROOT_DIR,'lawclassification','models','external',self.model_name)
-        self.finetunepath = os.path.join(ROOT_DIR,'lawclassification','models','internal',self.dataname,self.model_name)
         self.dropout = dropout
         self.problem_type = problem_type
         self.batchsize = batchsize
@@ -34,9 +34,13 @@ class deep_models():
         self.decay_lr = decay_lr
         self.epochs = epochs
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
         self.hier_max_seg = hier_max_seg
         self.hier_max_seg_length = hier_max_seg_length
+
+        if self.flag_hierarchical:
+            self.finetunepath = os.path.join(ROOT_DIR,'lawclassification','models','internal','hier',self.dataname,self.model_name)
+        else:
+            self.finetunepath = os.path.join(ROOT_DIR,'lawclassification','models','internal','normal',self.dataname,self.model_name)
 
         self.seed_val = random.randint(0, 1000)
         random.seed(self.seed_val)
@@ -44,11 +48,8 @@ class deep_models():
         torch.manual_seed(self.seed_val)
         torch.cuda.manual_seed_all(self.seed_val)
 
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, do_lower_case=True)
-        
         self.dataset_val = deep_data(typeSplit='val', 
                                      max_length = self.max_char_length, 
-                                     tokenizer = self.tokenizer, 
                                      hier_max_seg = self.hier_max_seg,
                                      hier_max_seg_length= self.hier_max_seg_length,
                                      dataname = self.dataname,
@@ -58,7 +59,6 @@ class deep_models():
 
         self.dataset_train = deep_data(typeSplit='train', 
                                        max_length = self.max_char_length, 
-                                       tokenizer = self.tokenizer, 
                                        hier_max_seg = self.hier_max_seg,
                                        hier_max_seg_length= self.hier_max_seg_length,
                                        dataname = self.dataname,
@@ -68,7 +68,6 @@ class deep_models():
 
         self.dataset_test = deep_data(typeSplit='test', 
                                       max_length = self.max_char_length, 
-                                      tokenizer = self.tokenizer, 
                                       hier_max_seg = self.hier_max_seg,
                                       hier_max_seg_length= self.hier_max_seg_length,
                                       dataname = self.dataname,
@@ -126,12 +125,20 @@ class deep_models():
 
         self.model.to(self.device)
 
-        self.optimizer = torch.optim.AdamW(set_learning_rates(self.lr,
-                                                              self.decay_lr,
-                                                              self.model,
-                                                              self.weight_decay,
-                                                              self.qtyFracLayers,
-                                                              None)) 
+        self.optimizer = torch.optim.AdamW(set_new_learning_rates(model = self.model,
+                                                                  base_lr = self.lr,
+                                                                  decay_lr = self.decay_lr,
+                                                                  weight_decay_bert = self.weight_decay,
+                                                                  qtyLayers = self.qtyFracLayers,
+                                                                  embeddings = True,
+                                                                  gcn_lr = None))
+
+        #self.optimizer = torch.optim.AdamW(set_learning_rates(self.lr,
+        #                                                      self.decay_lr,
+        #                                                      self.model,
+        #                                                      self.weight_decay,
+        #                                                      self.qtyFracLayers,
+        #                                                      None)) 
                 
 
         self.scheduler1 = torch.optim.lr_scheduler.LinearLR(self.optimizer, 

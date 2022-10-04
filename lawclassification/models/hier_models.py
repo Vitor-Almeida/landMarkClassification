@@ -22,11 +22,12 @@ from transformers.file_utils import ModelOutput
 
 @dataclass
 class SimpleOutput(ModelOutput):
+    pooler_output: torch.FloatTensor = None
     last_hidden_state: torch.FloatTensor = None
     past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
     hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     attentions: Optional[Tuple[torch.FloatTensor]] = None
-    cross_attentions: Optional[Tuple[torch.FloatTensor]] = None #colocar half aqui
+    cross_attentions: Optional[Tuple[torch.FloatTensor]] = None
 
 def sinusoidal_init(num_embeddings: int, embedding_dim: int, device: str):
     # keep dim 0 for padding token position encoding zero vector
@@ -50,6 +51,7 @@ class HierarchicalBert(nn.Module):
         supported_models = ['bert', 'roberta', 'deberta']
         assert encoder.config.model_type in supported_models  # other model types are not supported so far
         # Pre-trained segment (token-wise) encoder, e.g., BERT
+        # colocar 2e-5 na camada do hier
         self.encoder = encoder
         # Specs for the segment-wise encoder
         self.hidden_size = encoder.config.hidden_size
@@ -115,12 +117,15 @@ class HierarchicalBert(nn.Module):
 
         # Encode segments with segment-wise transformer
         # error aqui quando vai pro test:
+
         seg_encoder_outputs = self.seg_encoder(encoder_outputs)
 
         # Collect document representation
         outputs, _ = torch.max(seg_encoder_outputs, 1)
 
         #returnClass = transfReturn(outputs)
+
+        self.pooler_output = outputs
 
         return SimpleOutput(last_hidden_state=outputs, hidden_states=outputs)
         #return returnClass

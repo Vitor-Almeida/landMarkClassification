@@ -1,10 +1,12 @@
 from tqdm.auto import tqdm
 import torch
 import gc
+import os
+from utils.definitions import ROOT_DIR
+import pickle
 from models.deep_models import deep_models
 from utils.deep_metrics import metrics_config, metrics_config_special, f1ajust_lexglue
 from utils.helper_funs import save_model
-import torch.nn.functional as F
 import mlflow
 
 
@@ -28,7 +30,7 @@ class deep_train():
                                  experiment['problem_type'],
                                  experiment['weight_decay'],
                                  experiment['decay_lr'],
-                                 experiment['qty_layer_unfreeze'],
+                                 int(experiment['qty_layer_unfreeze']),
                                  bool(experiment['hierarchical']),
                                  int(experiment['hier_max_seg']),
                                  int(experiment['hier_max_seg_length'])
@@ -122,11 +124,12 @@ class deep_train():
                 batch = {k: v.to(self.model.device) for k, v in batch.items()}
 
                 with torch.autocast(device_type=self.model.device.type, dtype=torch.float16, enabled=self.flag_mixed_precision):
+                #with torch.autocast(device_type=self.model.device.type, dtype=torch.float16, enabled=True):
                     outputs = self.model.model(**batch)
 
                 if self.model.dataname in ['ecthr_b_lexbench','ecthr_a_lexbench','unfair_lexbench']:
                     #out,lab = f1ajust_lexglue(outputs.logits.detach().clone(), batch['labels'].int().detach().clone(),self.model.device)
-                    out,lab = f1ajust_lexglue(outputs.logits, batch['labels'].int(),self.model.device)
+                    out,lab = f1ajust_lexglue(outputs.logits, batch['labels'].int(),self.model.device, False)
                     self.metricsTestEpochSpecial(out, lab)
 
                 self.metricsTestEpoch(outputs.logits, batch['labels'].int())
@@ -152,7 +155,7 @@ class deep_train():
                     outputs = self.model.model(**batch)
 
                 if self.model.dataname in ['ecthr_b_lexbench','ecthr_a_lexbench','unfair_lexbench']:
-                    out,lab = f1ajust_lexglue(outputs.logits, batch['labels'].int(),self.model.device)
+                    out,lab = f1ajust_lexglue(outputs.logits, batch['labels'].int(),self.model.device, False)
                     self.metricsValEpochSpecial(out, lab)
 
                 self.metricsValEpoch(outputs.logits, batch['labels'].int())
@@ -199,5 +202,13 @@ class deep_train():
             mlflow.log_metrics({label:round(value.item(),4) for label, value in metric.items()},self.model.epochs)
             metric = self.metricsValEpochSpecial.reset()
 
-        save_model(self.model, epoch_i)
-        self.model.model.save_pretrained(self.model.finetunepath)
+        if self.model.flag_hierarchical:
+            if not os.path.exists(self.model.finetunepath):
+                os.makedirs(self.model.finetunepath)
+            with open(os.path.join(self.model.finetunepath,'hier.pickle'), 'wb') as f:
+                pickle.dump(self.model.model, f)
+                f.close()
+        else:
+            self.model.model.save_pretrained(self.model.finetunepath)
+
+

@@ -4,9 +4,6 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-
-
-
         {
             "name": "Python: Current File",
             "type": "python",
@@ -14,7 +11,7 @@
             "timeout": 1000,
             "program": "${file}",
             "console": "integratedTerminal",
-            "justMyCode": false
+            "justMyCode": true
         }
     ]
 }

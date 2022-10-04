@@ -103,11 +103,14 @@ def metrics_config_special(num_labels,device):
                                             #'auroc':auroc
                                             })
 
-def f1ajust_lexglue(outputs, batch, device):
+def f1ajust_lexglue(outputs, batch, device, flagBertGCN):
 
-    ajTensor = (torch.sigmoid(outputs) > torch.tensor([0.5],device=device,dtype=torch.float32))*1.0
+    if flagBertGCN:
+        ajTensor = (outputs > torch.tensor([0.5],device=device,dtype=torch.float32))*1.0
+    else:
+        ajTensor = (torch.sigmoid(outputs) > torch.tensor([0.5],device=device,dtype=torch.float32))*1.0
     nOut = torch.empty((1,ajTensor.size()[1]+1),dtype=torch.float32,device=device)
-    nLab = torch.empty((1,batch.size()[1]+1),dtype=torch.int32,device=device) #testar <--
+    nLab = torch.empty((1,batch.size()[1]+1),dtype=torch.int32,device=device)
     for out,lab in zip(ajTensor,batch):
         if out.sum() > 0:
             out=torch.cat((torch.tensor([0.0],device=device,dtype=torch.float32),out),dim=0)

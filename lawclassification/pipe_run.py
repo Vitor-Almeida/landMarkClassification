@@ -31,15 +31,13 @@ def main():
     #fastGraphMulti.fast_pipe_graph(path='ohsumed',maxRows=1000000,windowSize=20,nThreads=16)
     #fastGraphMulti.fast_pipe_graph(path='r8_chines',maxRows=1000000,windowSize=20,nThreads=16)
 
-    app.append_token_hier(dataname='ohsumed',modelname='bert-base-uncased')
-    #app.append_token_hier(dataname='ohsumed',modelname='nlpaueb.legal-bert-base-uncased')
-    
-    fastGraphMulti.fast_pipe_graph(path='ohsumed',maxRows=1000000,windowSize=20,nThreads=16, train=False)
+    #app.append_token_hier(dataname='ohsumed',modelname='bert-base-uncased')
+    #fastGraphMulti.fast_pipe_graph(path='ohsumed',maxRows=1000000,windowSize=20,nThreads=16, train=False)
 
-    print('vu')
+    #app.append_token_hier(dataname='SemEval2018-Task1-all-data',modelname='bert-base-uncased')
+    #fastGraphMulti.fast_pipe_graph(path='SemEval2018-Task1-all-data',maxRows=1000000,windowSize=20,nThreads=16, train=False)
 
-    app.append_token_hier(dataname='SemEval2018-Task1-all-data',modelname='nlpaueb.legal-bert-base-uncased')
-    fastGraphMulti.fast_pipe_graph(path='SemEval2018-Task1-all-data',maxRows=1000000,windowSize=20,nThreads=16, train=False)
+    #print('vu')
 
     app.append_token_hier(dataname='scotus_lexbench',modelname='nlpaueb.legal-bert-base-uncased')
     fastGraphMulti.fast_pipe_graph(path='scotus_lexbench',maxRows=1000000,windowSize=20,nThreads=16, train=False)

@@ -10,6 +10,7 @@ import re
 
 def evallist(row):
 
+    #slow:
     cols = ['labels','token_s_hier_id','token_s_hier_att','token_s_hier_tid','token_w_hier_id','token_w_hier_att','token_w_hier_tid']
 
     for col in cols:
@@ -24,7 +25,7 @@ class deep_data(Dataset):
     Load raw data in a pytorch dataset class
     All data will follow the (label,text) format
     """
-    def __init__(self, typeSplit,tokenizer,hier_max_seg,hier_max_seg_length,
+    def __init__(self, typeSplit,hier_max_seg,hier_max_seg_length,
                  max_length,dataname,problem_type,flag_hierarchical,flag_bertgcn):
         super(deep_data, self).__init__()
 
@@ -63,7 +64,6 @@ class deep_data(Dataset):
         self.token_w_tid = self.dataframe.iloc[:,8]
 
         self.max_length = max_length
-        self.tokenizer = tokenizer
 
         self.count = 0
 
@@ -80,7 +80,10 @@ class deep_data(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        labels1 = torch.tensor(self.labels[idx],dtype=torch.int64)
+        if self.problem_type == 'single_label_classification':
+            labels1 = torch.tensor(self.labels[idx],dtype=torch.int64)
+        else:
+            labels1 = torch.tensor(self.labels[idx],dtype=torch.float32)
 
         if self.flag_hierarchical:
 

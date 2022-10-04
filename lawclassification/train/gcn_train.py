@@ -204,7 +204,7 @@ class gcn_train():
                 self.metricsTestEpoch(y_hat, y.int())
 
                 if self.dataname in ['ecthr_b_lexbench','ecthr_a_lexbench','unfair_lexbench']:
-                    out,lab = f1ajust_lexglue(y_hat, y, self.model.device)
+                    out,lab = f1ajust_lexglue(y_hat, y, self.model.device, False)
                     self.metricsTestEpochSpecial(out, lab.int())
 
                 lossTest += loss.item() * batch.batch_size
@@ -236,7 +236,7 @@ class gcn_train():
                 loss = self.criterion(y_hat, y)
 
                 if self.dataname in ['ecthr_b_lexbench','ecthr_a_lexbench','unfair_lexbench']:
-                    out,lab = f1ajust_lexglue(y_hat, y, self.model.device)
+                    out,lab = f1ajust_lexglue(y_hat, y, self.model.device, False)
                     self.metricsValEpochSpecial(out, lab.int())
 
                 self.metricsValEpoch(y_hat, y.int())

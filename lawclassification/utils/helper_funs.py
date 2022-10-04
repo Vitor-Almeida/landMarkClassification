@@ -10,6 +10,7 @@ from tokenizers.processors import TemplateProcessing
 from tokenizers.trainers import WordPieceTrainer
 import numpy as np
 import torch
+from math import floor, log10
 import re
 
 def save_model(model, epoch):
@@ -82,6 +83,166 @@ class EarlyStopping:
             if self.counter >= self.patience:
                 return True
         return False
+
+
+def set_new_learning_rates(model, base_lr, decay_lr, weight_decay_bert, qtyLayers, embeddings, gcn_lr):
+
+    #https://towardsdatascience.com/advanced-techniques-for-fine-tuning-transformers-82e4e61e16e#6196
+
+    opt_parameters = []    # To be passed to the optimizer (only parameters of the layers you want to update).
+    named_parameters_core_bert = [(n,p) for n,p in list(model.named_parameters()) if not any(nd in n for nd in ['seg_pos_embeddings','seg_encoder','convs'])]
+    named_parameters_hierBert = [(n,p) for n,p in list(model.named_parameters()) if any(nd in n for nd in ['seg_pos_embeddings','seg_encoder'])]
+    named_parameters_convs = [(n,p) for n,p in list(model.named_parameters()) if any(nd in n for nd in ['convs'])]
+
+    #### start core bert #################### :
+
+    qtyLayers = -1 if qtyLayers==-1 else 11 - qtyLayers
+    
+    # According to AAAMLP book by A. Thakur, we generally do not use any decay 
+    # for bias and LayerNorm.weight layers.
+    no_decay = ["bias", "LayerNorm.bias", "LayerNorm.weight"]
+    init_lr = base_lr
+    head_lr = init_lr + 0.1/(10**-floor(log10(init_lr)))
+    lr = init_lr
+
+    for layer in named_parameters_core_bert:
+        layer[1].requires_grad = False
+    
+    # === Pooler and regressor ======================================================  
+    
+    params_0 = [p for n,p in named_parameters_core_bert if ("pooler" in n or "regressor" in n or "classifier" in n) 
+                and any(nd in n for nd in no_decay)]
+    params_0_names = [n for n,p in named_parameters_core_bert if ("pooler" in n or "regressor" in n or "classifier" in n) 
+                and any(nd in n for nd in no_decay)]
+    params_1 = [p for n,p in named_parameters_core_bert if ("pooler" in n or "regressor" in n or "classifier" in n)
+                and not any(nd in n for nd in no_decay)]
+    params_1_names = [n for n,p in named_parameters_core_bert if ("pooler" in n or "regressor" in n or "classifier" in n)
+                and not any(nd in n for nd in no_decay)]
+    
+    for idx,layer in enumerate(params_1):
+        layer.requires_grad = True
+        print(f'{params_1_names[idx]} lr: {head_lr} weight_decay: {weight_decay_bert} {layer.requires_grad}')
+    for idx,layer in enumerate(params_0):
+        layer.requires_grad = True
+        print(f'{params_0_names[idx]} lr: {head_lr} weight_decay: 0.0 {layer.requires_grad}')
+
+    head_params = {"params": params_0, "lr": head_lr, "weight_decay": 0.0}
+    opt_parameters.append(head_params)
+        
+    head_params = {"params": params_1, "lr": head_lr, "weight_decay": weight_decay_bert}
+    opt_parameters.append(head_params)
+
+    # === 12 Hidden layers ==========================================================
+    
+    for layer in range(11,qtyLayers,-1):        
+        params_0 = [p for n,p in named_parameters_core_bert if f"encoder.layer.{layer}." in n 
+                    and any(nd in n for nd in no_decay)]
+        params_0_names = [n for n,p in named_parameters_core_bert if f"encoder.layer.{layer}." in n 
+                    and any(nd in n for nd in no_decay)]
+        params_1 = [p for n,p in named_parameters_core_bert if f"encoder.layer.{layer}." in n 
+                    and not any(nd in n for nd in no_decay)]
+        params_1_names = [n for n,p in named_parameters_core_bert if f"encoder.layer.{layer}." in n 
+                    and not any(nd in n for nd in no_decay)]
+        
+        for idx,layer in enumerate(params_1):
+            layer.requires_grad = True
+            print(f'{params_1_names[idx]} lr: {lr} weight_decay: {weight_decay_bert} {layer.requires_grad}')
+        for idx,layer in enumerate(params_0):
+            layer.requires_grad = True
+            print(f'{params_0_names[idx]} lr: {lr} weight_decay: 0.0 {layer.requires_grad}')
+
+        layer_params = {"params": params_0, "lr": lr, "weight_decay": 0.0}
+        opt_parameters.append(layer_params)   
+                            
+        layer_params = {"params": params_1, "lr": lr, "weight_decay": weight_decay_bert}
+        opt_parameters.append(layer_params)   
+
+        lr *= decay_lr    
+        
+    # === Embeddings layer ==========================================================
+    
+    if embeddings:
+
+        params_0 = [p for n,p in named_parameters_core_bert if "embeddings" in n 
+                    and any(nd in n for nd in no_decay)]
+        params_0_names = [n for n,p in named_parameters_core_bert if "embeddings" in n 
+                    and any(nd in n for nd in no_decay)]
+        params_1 = [p for n,p in named_parameters_core_bert if "embeddings" in n
+                    and not any(nd in n for nd in no_decay)]
+        params_1_names = [n for n,p in named_parameters_core_bert if "embeddings" in n
+                    and not any(nd in n for nd in no_decay)]
+
+        for idx,layer in enumerate(params_1):
+            layer.requires_grad = True
+            print(f'{params_1_names[idx]} lr: {lr} weight_decay: {weight_decay_bert} {layer.requires_grad}')
+        for idx,layer in enumerate(params_0):
+            layer.requires_grad = True
+            print(f'{params_0_names[idx]} lr: {lr} weight_decay: 0.0 {layer.requires_grad}')
+
+        embed_params = {"params": params_0, "lr": lr, "weight_decay": 0.0} 
+        opt_parameters.append(embed_params)
+            
+        embed_params = {"params": params_1, "lr": lr, "weight_decay": weight_decay_bert} 
+        opt_parameters.append(embed_params)        
+
+
+    # ==== Hier Layer =====================================================================
+
+    no_decay = ["bias", "LayerNorm.bias", "LayerNorm.weight"] + ['norm.weight']
+
+    if len(named_parameters_hierBert)>0:
+
+        for layer in named_parameters_hierBert:
+            layer[1].requires_grad = False
+
+        params_0 = [p for n,p in named_parameters_hierBert if any(nd in n for nd in no_decay)]
+        params_0_names = [n for n,p in named_parameters_hierBert if any(nd in n for nd in no_decay)]
+        params_1 = [p for n,p in named_parameters_hierBert if not any(nd in n for nd in no_decay)]
+        params_1_names = [n for n,p in named_parameters_hierBert if not any(nd in n for nd in no_decay)]
+
+        for idx,layer in enumerate(params_1):
+            layer.requires_grad = True
+            print(f'{params_1_names[idx]} lr: {head_lr} weight_decay: {weight_decay_bert} {layer.requires_grad}')
+        for idx,layer in enumerate(params_0):
+            layer.requires_grad = True
+            print(f'{params_0_names[idx]} lr: {head_lr} weight_decay: 0.0 {layer.requires_grad}')
+
+        embed_params = {"params": params_0, "lr": head_lr, "weight_decay": 0.0} 
+        opt_parameters.append(embed_params)
+            
+        embed_params = {"params": params_1, "lr": head_lr, "weight_decay": weight_decay_bert} 
+        opt_parameters.append(embed_params)     
+
+    # ==== Conv Layer =====================================================================
+
+    if len(named_parameters_convs)>0:
+
+        for layer in named_parameters_convs:
+            layer[1].requires_grad = False
+
+        params_0 = [p for n,p in named_parameters_convs if any(nd in n for nd in no_decay)]
+        params_0_names = [n for n,p in named_parameters_convs if any(nd in n for nd in no_decay)]
+        params_1 = [p for n,p in named_parameters_convs if not any(nd in n for nd in no_decay)]
+        params_1_names = [n for n,p in named_parameters_convs if not any(nd in n for nd in no_decay)]
+
+        for idx,layer in enumerate(params_1):
+            layer.requires_grad = True
+            print(f'{params_1_names[idx]} lr: {gcn_lr} weight_decay: {5e-4} {layer.requires_grad}')
+        for idx,layer in enumerate(params_0):
+            layer.requires_grad = True
+            print(f'{params_0_names[idx]} lr: {gcn_lr} weight_decay: 0.0 {layer.requires_grad}')
+
+        embed_params = {"params": params_0, "lr": gcn_lr, "weight_decay": 0.0} 
+        opt_parameters.append(embed_params)
+            
+        embed_params = {"params": params_1, "lr": gcn_lr, "weight_decay": 5e-4} 
+        opt_parameters.append(embed_params)   
+
+    #check:
+    #for n,p in model.named_parameters(): print(n,p.requires_grad)
+
+    return opt_parameters
+
 
 def set_learning_rates(base_lr,decay_lr,model,weight_decay,qtyFracLayers,gcn_lr):
 
