@@ -1,12 +1,9 @@
 from tqdm.auto import tqdm
 import torch
-import gc
 import os
-from utils.definitions import ROOT_DIR
 import pickle
 from models.deep_models import deep_models
 from utils.deep_metrics import metrics_config, metrics_config_special, f1ajust_lexglue
-from utils.helper_funs import save_model
 import mlflow
 
 
@@ -96,9 +93,6 @@ class deep_train():
             scaler.step(self.model.optimizer) #self.model.optimizer.step()
             #self.model.scheduler.step()
 
-            #torch.isnan(x)
-            #torch.isinf(x)
-            
             scaler.update()
             self.model.optimizer.zero_grad(set_to_none = True)
 
@@ -128,7 +122,6 @@ class deep_train():
                     outputs = self.model.model(**batch)
 
                 if self.model.dataname in ['ecthr_b_lexbench','ecthr_a_lexbench','unfair_lexbench']:
-                    #out,lab = f1ajust_lexglue(outputs.logits.detach().clone(), batch['labels'].int().detach().clone(),self.model.device)
                     out,lab = f1ajust_lexglue(outputs.logits, batch['labels'].int(),self.model.device, False)
                     self.metricsTestEpochSpecial(out, lab)
 

@@ -86,7 +86,9 @@ def main():
         print(f'Starting Bert+GNN experiments: {idx+1}/{len(expDicBertGCN)}')
         print(f'Results are being logged in mlflow ...')
 
-        mlflow.set_experiment('[(B)GCN]'+experiment['dataname'])
+        expSubName = '[(H_B)GCN]' if bool(experiment['hierarchical']) else '[(B)GCN]'
+
+        mlflow.set_experiment(expSubName+experiment['dataname'])
 
         with mlflow.start_run(run_name=experiment['descripton']):
             gcnExp = bertGcn_Train(experiment)

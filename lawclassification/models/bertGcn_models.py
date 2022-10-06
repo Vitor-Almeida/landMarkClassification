@@ -38,6 +38,7 @@ class ensemble_model():
         self.hiddenChannels = int(experiment['hidden_channels'])
         self.problemType = experiment['problem_type']
         self.batchSizeGcn = int(experiment['batchsize_gcn'])
+        self.batchSize = int(experiment['batchsize_gcn'])
         self.bert_lr = experiment['bert_lr']
         self.gcn_lr = experiment['gcn_lr']
         self.flag_hierarchical = experiment['hierarchical']
@@ -55,15 +56,17 @@ class ensemble_model():
             del self.dataset.token_w_hier_id
             del self.dataset.token_w_hier_att
             del self.dataset.token_w_hier_tid
+            del self.dataset.token_s_hier_tid
             gc.collect()
             self.dataset.token_w_hier_id = self.dataset.token_s_hier_id
             self.dataset.token_w_hier_att = self.dataset.token_s_hier_att
-            self.dataset.token_w_hier_tid = self.dataset.token_s_hier_tid
+            #self.dataset.token_w_hier_tid = self.dataset.token_s_hier_tid
         else:
             self.finetunepath = os.path.join(ROOT_DIR,'lawclassification','models','internal','normal',self.dataname,self.model_name)
             del self.dataset.token_s_hier_id
             del self.dataset.token_s_hier_att
             del self.dataset.token_s_hier_tid
+            del self.dataset.token_w_hier_tid
             gc.collect()
 
         with open(os.path.join(os.path.join(ROOT_DIR,'data',self.dataname,'interm','id2label.json'))) as f:
@@ -76,14 +79,14 @@ class ensemble_model():
 
         self.bertGcnModel = Bert_GCN(self.id2label, self.label2id , 
                                      self.problemType, self.dataset.num_classes, 
-                                     self.hiddenChannels, self.device, self.finetunepath, self.flag_hierarchical , m=0.7)
+                                     self.hiddenChannels, self.device, self.finetunepath, self.flag_hierarchical , m=0.0)
 
         self.optimizer = torch.optim.AdamW(set_new_learning_rates(model = self.bertGcnModel,
                                                                   base_lr = self.bert_lr,
                                                                   decay_lr = self.decay_lr,
                                                                   weight_decay_bert = self.weight_decay,
                                                                   qtyLayers = self.qtyFracLayers,
-                                                                  embeddings = True,
+                                                                  embeddings = False,
                                                                   gcn_lr = self.gcn_lr))
 
         self.warmup_size = 0.1
@@ -96,7 +99,7 @@ class ensemble_model():
                                           batch_size = self.batchSizeGcn
                                           )
         #precisa usar a mask?::
-        self.trainLoader.data.num_nodes = self.dataset.num_nodes
+        #self.trainLoader.data.num_nodes = self.dataset.num_nodes
         self.trainLoader.data.n_id = torch.arange(self.dataset.num_nodes)
 
         self.testLoader = NeighborLoader(self.dataset, input_nodes = self.dataset.test_mask,
@@ -106,8 +109,8 @@ class ensemble_model():
                                           )
 
         #precisa usar a mask?::
-        self.testLoader.data.num_nodes = self.dataset.num_nodes
-        self.testLoader.data.n_id = torch.arange(self.dataset.num_nodes)
+        #self.testLoader.data.num_nodes = self.dataset.num_nodes
+        #self.testLoader.data.n_id = torch.arange(self.dataset.num_nodes)
 
         self.valLoader = NeighborLoader(self.dataset, input_nodes = self.dataset.val_mask,
                                         num_neighbors = self.neigh_param, shuffle = False, 
@@ -116,8 +119,8 @@ class ensemble_model():
                                         )
 
         #precisa usar a mask?::
-        self.valLoader.data.num_nodes = self.dataset.num_nodes
-        self.valLoader.data.n_id = torch.arange(self.dataset.num_nodes)
+        #self.valLoader.data.num_nodes = self.dataset.num_nodes
+        #self.valLoader.data.n_id = torch.arange(self.dataset.num_nodes)
 
         #self.updateDataLoader = NeighborLoader(self.dataset, input_nodes = self.dataset.docmask,
         #                                       num_neighbors = [-1], shuffle = False, 
@@ -128,9 +131,8 @@ class ensemble_model():
 
         self.updateDataLoader = torch.utils.data.DataLoader(
             torch.utils.data.TensorDataset(self.dataset.token_w_hier_id[self.dataset.docmask], 
-                                           self.dataset.token_w_hier_att[self.dataset.docmask],
-                                           self.dataset.token_w_hier_tid[self.dataset.docmask]),
-                                           batch_size=16)
+                                           self.dataset.token_w_hier_att[self.dataset.docmask]),
+                                           batch_size=32)
 
         self.total_steps = self.epochs
 
@@ -174,8 +176,8 @@ class Bert_GCN(torch.nn.Module):
                                                                                 num_labels = nb_class,
                                                                                 id2label = id2label,
                                                                                 label2id = label2id,
-                                                                                output_attentions = False, #?
-                                                                                output_hidden_states = True, #?
+                                                                                output_attentions = False,
+                                                                                output_hidden_states = True,
                                                                                 ################
                                                                                 torch_dtype = torch.float32, trust_remote_code=True)
 
@@ -189,7 +191,7 @@ class Bert_GCN(torch.nn.Module):
             device = device
         )
 
-    def forward(self, graphFeats, n_id,  graphEdgeIndex, graphEdgeWieght, graphInputIds, graphAttMask, graphTokenType, batch_size, subgraphLoader):
+    def forward(self, graphFeats,graphEdgeIndex, graphEdgeWieght, graphInputIds, graphAttMask, graphTokenType, batch_size):
     #def forward(self, dataset, n_id, graphEdgeIndex, graphEdgeWieght, graphInputIds, graphAttMask, batch_size, subgraphLoader):
         if self.training:
             cls_feats = self.bert_model.bert(input_ids=graphInputIds, attention_mask=graphAttMask, token_type_ids=graphTokenType).pooler_output

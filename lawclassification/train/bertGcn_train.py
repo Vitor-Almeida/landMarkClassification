@@ -79,14 +79,18 @@ class bertGcn_Train():
                 #input_ids = batch.token_w_hier_id[:batch.batch_size]
                 attention_mask = batch[1].to(self.model.device)
                 #attention_mask = batch.token_w_hier_att[:batch.batch_size]
-                token_type_ids = batch[2].to(self.model.device)
+                #token_type_ids = batch[2].to(self.model.device)
                 #token_type_ids = batch.token_w_hier_tid[:batch.batch_size]
 
                 #colocar só train?
                 with torch.autocast(device_type=self.model.device.type, dtype=torch.float16, enabled=not(self.model.flag_hierarchical)):
+                    #output = self.model.bertGcnModel.bert_model.bert(input_ids=input_ids, 
+                    #                                                 attention_mask=attention_mask, 
+                    #                                                 token_type_ids=token_type_ids).pooler_output
+
                     output = self.model.bertGcnModel.bert_model.bert(input_ids=input_ids, 
                                                                      attention_mask=attention_mask, 
-                                                                     token_type_ids=token_type_ids).pooler_output
+                                                                     token_type_ids=None).pooler_output
 
                 cls_list.append(output.cpu())
             cls_feat = torch.cat(cls_list, axis=0)
@@ -103,16 +107,16 @@ class bertGcn_Train():
         for batch in self.model.trainLoader:
             self.model.optimizer.zero_grad()
 
+            #batch = batch.to(self.model.device)
+
             y = batch.y[:batch.batch_size]
             y_hat, cls_feats = self.model.bertGcnModel(batch.x,
-                                                       batch.n_id,
                                                        batch.edge_index,
                                                        batch.edge_weight, 
                                                        batch.token_w_hier_id[:batch.batch_size], 
                                                        batch.token_w_hier_att[:batch.batch_size], 
-                                                       batch.token_w_hier_tid[:batch.batch_size], 
-                                                       batch.batch_size,
-                                                       None)
+                                                       None, 
+                                                       batch.batch_size)
 
             loss = self.criterion(y_hat, y)
             loss.backward()
@@ -126,7 +130,7 @@ class bertGcn_Train():
             lossTrain += loss.item() * batch.batch_size
             total_examples += batch.batch_size
 
-            self.model.dataset.x[batch.n_id[:batch.batch_size]] = cls_feats.detach()
+            self.model.dataset.x[batch.n_id[:batch.batch_size]] = cls_feats.detach()#.to('cpu')
 
         self.model.scheduler.step()
 
@@ -149,14 +153,12 @@ class bertGcn_Train():
 
                 y = batch.y[:batch.batch_size]
                 y_hat, _ = self.model.bertGcnModel(batch.x,
-                                                   batch.n_id,
                                                    batch.edge_index,
                                                    batch.edge_weight, 
                                                    batch.token_w_hier_id[:batch.batch_size], 
                                                    batch.token_w_hier_att[:batch.batch_size], 
-                                                   batch.token_w_hier_tid[:batch.batch_size], 
-                                                   batch.batch_size,
-                                                   None)
+                                                   None, 
+                                                   batch.batch_size)
 
                 if self.model.dataname in ['ecthr_b_lexbench','ecthr_a_lexbench','unfair_lexbench']:
                     out,lab = f1ajust_lexglue(y_hat, y, self.model.device, True)
@@ -193,14 +195,12 @@ class bertGcn_Train():
 
                 y = batch.y[:batch.batch_size]
                 y_hat, _ = self.model.bertGcnModel(batch.x,
-                                                   batch.n_id,
                                                    batch.edge_index,
                                                    batch.edge_weight, 
                                                    batch.token_w_hier_id[:batch.batch_size], 
                                                    batch.token_w_hier_att[:batch.batch_size], 
-                                                   batch.token_w_hier_tid[:batch.batch_size], 
-                                                   batch.batch_size,
-                                                   None)
+                                                   None, 
+                                                   batch.batch_size)
 
                 if self.model.dataname in ['ecthr_b_lexbench','ecthr_a_lexbench','unfair_lexbench']:
                     out,lab = f1ajust_lexglue(y_hat, y, self.model.device, True)

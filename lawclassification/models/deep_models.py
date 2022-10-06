@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 import os
 from utils.definitions import ROOT_DIR
 from transformers import logging
-from utils.helper_funs import EarlyStopping, set_learning_rates, set_new_learning_rates
+from utils.helper_funs import EarlyStopping, set_new_learning_rates
 
 class deep_models():
 

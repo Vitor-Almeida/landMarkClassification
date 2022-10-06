@@ -31,31 +31,31 @@ def main():
     #fastGraphMulti.fast_pipe_graph(path='ohsumed',maxRows=1000000,windowSize=20,nThreads=16)
     #fastGraphMulti.fast_pipe_graph(path='r8_chines',maxRows=1000000,windowSize=20,nThreads=16)
 
-    #app.append_token_hier(dataname='ohsumed',modelname='bert-base-uncased')
-    #fastGraphMulti.fast_pipe_graph(path='ohsumed',maxRows=1000000,windowSize=20,nThreads=16, train=False)
+    app.append_token_hier(dataname='ohsumed',modelname='bert-base-uncased')
+    fastGraphMulti.fast_pipe_graph(path='ohsumed',maxRows=1000000,windowSize=20,nThreads=16, train=True,modelname='bert-base-uncased')
 
-    #app.append_token_hier(dataname='SemEval2018-Task1-all-data',modelname='bert-base-uncased')
-    #fastGraphMulti.fast_pipe_graph(path='SemEval2018-Task1-all-data',maxRows=1000000,windowSize=20,nThreads=16, train=False)
+    app.append_token_hier(dataname='SemEval2018-Task1-all-data',modelname='bert-base-uncased')
+    fastGraphMulti.fast_pipe_graph(path='SemEval2018-Task1-all-data',maxRows=1000000,windowSize=20,nThreads=16, train=False, modelname='bert-base-uncased')
 
-    #print('vu')
+    print('vu')
 
     app.append_token_hier(dataname='scotus_lexbench',modelname='nlpaueb.legal-bert-base-uncased')
-    fastGraphMulti.fast_pipe_graph(path='scotus_lexbench',maxRows=1000000,windowSize=20,nThreads=16, train=False)
+    fastGraphMulti.fast_pipe_graph(path='scotus_lexbench',maxRows=1000000,windowSize=20,nThreads=16, train=False,modelname='nlpaueb.legal-bert-base-uncased')
 
     app.append_token_hier(dataname='ledgar_lexbench',modelname='nlpaueb.legal-bert-base-uncased')
-    fastGraphMulti.fast_pipe_graph(path='ledgar_lexbench',maxRows=1000000,windowSize=20,nThreads=16, train=False)
+    fastGraphMulti.fast_pipe_graph(path='ledgar_lexbench',maxRows=1000000,windowSize=20,nThreads=16, train=False,modelname='nlpaueb.legal-bert-base-uncased')
 
     app.append_token_hier(dataname='ecthr_b_lexbench',modelname='nlpaueb.legal-bert-base-uncased')
-    fastGraphMulti.fast_pipe_graph(path='ecthr_b_lexbench',maxRows=1000000,windowSize=20,nThreads=16, train=False)
+    fastGraphMulti.fast_pipe_graph(path='ecthr_b_lexbench',maxRows=1000000,windowSize=20,nThreads=16, train=False,modelname='nlpaueb.legal-bert-base-uncased')
 
     app.append_token_hier(dataname='ecthr_a_lexbench',modelname='nlpaueb.legal-bert-base-uncased')
-    fastGraphMulti.fast_pipe_graph(path='ecthr_a_lexbench',maxRows=1000000,windowSize=20,nThreads=16, train=False)
+    fastGraphMulti.fast_pipe_graph(path='ecthr_a_lexbench',maxRows=1000000,windowSize=20,nThreads=16, train=False,modelname='nlpaueb.legal-bert-base-uncased')
 
     app.append_token_hier(dataname='eurlex_lexbench',modelname='nlpaueb.legal-bert-base-uncased')
-    fastGraphMulti.fast_pipe_graph(path='eurlex_lexbench',maxRows=1000000,windowSize=20,nThreads=16, train=False)
+    fastGraphMulti.fast_pipe_graph(path='eurlex_lexbench',maxRows=1000000,windowSize=20,nThreads=16, train=False,modelname='nlpaueb.legal-bert-base-uncased')
 
     app.append_token_hier(dataname='unfair_lexbench',modelname='nlpaueb.legal-bert-base-uncased')
-    fastGraphMulti.fast_pipe_graph(path='unfair_lexbench',maxRows=1000000,windowSize=20,nThreads=16, train=False)
+    fastGraphMulti.fast_pipe_graph(path='unfair_lexbench',maxRows=1000000,windowSize=20,nThreads=16, train=False,modelname='nlpaueb.legal-bert-base-uncased')
 
     #app.append_token_hier(dataname='scotus_lexbench',modelname='nlpaueb.legal-bert-base-uncased')
     

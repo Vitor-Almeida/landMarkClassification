@@ -23,14 +23,14 @@ def _split_listN(a, n):
     k, m = divmod(len(a), n)
     return (a[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n))
 
-def _tokenizer(df:pd.DataFrame, vocab_size:int, train:bool):
+def _tokenizer(df:pd.DataFrame, vocab_size:int, train:bool, modelname:str):
 
     if train:
         bertTokenizer , trainer = hug_tokenizer(vocab_size)
         bertTokenizer.train_from_iterator(df['text'], trainer=trainer)
     else:
         #PreTrainedTokenizerFast
-        bertTokenizer = BertTokenizerFast.from_pretrained(os.path.join(ROOT_DIR,'lawclassification','models','external','nlpaueb.legal-bert-base-uncased'))
+        bertTokenizer = BertTokenizerFast.from_pretrained(os.path.join(ROOT_DIR,'lawclassification','models','external',modelname))
         #bertTokenizer = BertTokenizer.from_pretrained(os.path.join(ROOT_DIR,'lawclassification','models','external','bert-base-uncased'))
         #bertTokenizer = BertTokenizer.from_pretrained(os.path.join(ROOT_DIR,'lawclassification','models','external','ulysses-camara.legal-bert-pt-br'))
         #bertTokenizer = BertTokenizer.from_pretrained(os.path.join(ROOT_DIR,'lawclassification','models','external','neuralmind.bert-base-portuguese-cased'))
@@ -74,7 +74,7 @@ def _load_csv_bertgcn(path: str) -> pd.DataFrame:
     return df
 
 
-def _load_csv(path: str, maxRows: int, train: bool) -> pd.DataFrame:
+def _load_csv(path: str, maxRows: int, train: bool,modelname:str) -> pd.DataFrame:
     '''load split csv file from other the deep/xgboost pipe and get ready for the graph pipe
     '''
 
@@ -97,7 +97,7 @@ def _load_csv(path: str, maxRows: int, train: bool) -> pd.DataFrame:
     elif numChar > 300_000_000: #limite da memoria
         df['text'] = df['text'].apply(lambda row: row[:int(len(row)/2)])
 
-    df['text_token'],vocabMaps = _tokenizer(df,vocab_size=300000,train = train)
+    df['text_token'],vocabMaps = _tokenizer(df,vocab_size=300000,train = train,modelname=modelname)
     
     df = df.head(maxRows)
     df.reset_index(inplace=True,drop=True)
@@ -308,13 +308,13 @@ def _parallel_load(docsArrThread, windowSize, vocabMaps):
 
     return edgeDf
 
-def _create_edge_df(path: str, maxRows: int, windowSize: int, nThreads:int, train:bool) -> pd.DataFrame:
+def _create_edge_df(path: str, maxRows: int, windowSize: int, nThreads:int, train:bool, modelname:str) -> pd.DataFrame:
 
     multi2label = []
 
     if not os.path.exists(os.path.join(ROOT_DIR,'data',path,'interm','pre_graph.csv')):
 
-        df, vocabMaps, multi2label = _load_csv(path,maxRows,train)
+        df, vocabMaps, multi2label = _load_csv(path,maxRows,train,modelname)
 
     else:
 
@@ -523,12 +523,12 @@ def _create_pygraph_data(graphDf:pd.DataFrame,multi2label,path:str) -> None:
 
     return textGcnData , bertGcnData
 
-def fast_pipe_graph(path: str, maxRows: int, windowSize: int, nThreads:int, train:bool) -> None:
+def fast_pipe_graph(path: str, maxRows: int, windowSize: int, nThreads:int, train:bool, modelname:str) -> None:
 
     print('Dataset: ',path)
     print("Creating graph dataset... this might take a while", datetime.now().strftime("%H:%M:%S"))
 
-    graphDf, multi2label = _create_edge_df(path, maxRows, windowSize, nThreads, train)
+    graphDf, multi2label = _create_edge_df(path, maxRows, windowSize, nThreads, train,modelname)
 
     textGcnData, bertGcnData = _create_pygraph_data(graphDf, multi2label, path)
 

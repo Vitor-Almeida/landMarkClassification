@@ -1,4 +1,3 @@
-
 #https://github.com/coastalcph/lex-glue/blob/main/models/hierbert.py
 
 #@inproceedings{chalkidis-etal-2021-lexglue,
@@ -125,9 +124,10 @@ class HierarchicalBert(nn.Module):
 
         #returnClass = transfReturn(outputs)
 
-        self.pooler_output = outputs
+        #self.pooler_output = outputs
 
-        return SimpleOutput(last_hidden_state=outputs, hidden_states=outputs)
+        #return SimpleOutput(last_hidden_state = outputs, hidden_states = outputs, pooler_output = outputs)
+        return SimpleOutput(pooler_output = outputs)
         #return returnClass
 
 if __name__ == "__main__":
