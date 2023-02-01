@@ -7,6 +7,7 @@
 #roberta-base
 #saibo.legal-roberta-base
 #CaseLaw-BERT
+
 #ulysses-camara.legal-bert-pt-br
 #neuralmind.bert-base-portuguese-cased
 
@@ -17,6 +18,7 @@
 #scotus_lexbench;single_label_classification
 #unfair_lexbench;multi_label_classification
 #ohsumed;single_label_classification
+#small_tj;multi_label_classification
 
 
 
