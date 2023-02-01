@@ -1378,3 +1378,113 @@ def tj(test_split:float,selected_col:str) -> None:
         f.close()
 
     return None
+
+def small_tj(test_split:float) -> None:
+
+    path = os.path.join(ROOT_DIR,'data','small_tj','raw','TrainingSet_s34787.csv.xz')
+    df = pd.read_csv(path)
+
+    path_test = os.path.join(ROOT_DIR,'data','small_tj','raw','TestSet_s34787.csv.xz')
+    df_test = pd.read_csv(path_test)
+
+    pathCTexto = os.path.join(ROOT_DIR,'data','tj','raw','dataset_tjce_v1_trata_texto.csv.zip')
+
+    df_c_texto = pd.read_csv(pathCTexto)
+    df_c_texto = df_c_texto[['documento_id','processo_id','texto_tratado']]
+    df = df.merge(df_c_texto,on=['processo_id','documento_id'])
+    df_test = df_test.merge(df_c_texto,on=['processo_id','documento_id'])
+
+    df['new_id'] = df['processo_id'].astype(str) + '0' + df['documento_id'].astype(str)
+    df['new_id'] = df['new_id'].astype(int)
+    df_test['new_id'] = df_test['processo_id'].astype(str) + '0' + df_test['documento_id'].astype(str)
+    df_test['new_id'] = df_test['new_id'].astype(int)
+
+    df.rename(columns={'texto_tratado':'text'},inplace=True)
+    df_test.rename(columns={'texto_tratado':'text'},inplace=True)
+    df.set_index(['new_id'],drop=True,inplace=True)
+    df_test.set_index(['new_id'],drop=True,inplace=True)
+    
+    cols = ['text','assuntoPrincipal']
+
+    df = df[cols].drop_duplicates()
+    df_test = df_test[cols].drop_duplicates()
+
+    df = pd.concat([df,df_test],ignore_index=True)
+
+    df = df.sample(frac=1)
+
+    multiLabel = np.unique(df['assuntoPrincipal']).tolist()
+    multiLabel = [sub.replace('+', '') for sub in multiLabel]
+    newLabels = []
+
+    for label in multiLabel:
+        splitLabel = label.split(":")
+        newLabels.append(splitLabel)
+
+    newLabels = [item for sublist in newLabels for item in sublist]
+    newLabels = np.unique(np.array(newLabels)).tolist()
+    numberOfClasses = len(newLabels)
+    newLabels.sort()
+
+    multiIdLabelDic = {idx:label for idx, label in enumerate(newLabels)}
+    multiLabelIdDic = {label:idx for idx, label in enumerate(newLabels)}
+
+    id2label = {idx:int(label) for idx, label in enumerate(newLabels)}
+    label2id = {int(label):idx for idx, label in enumerate(newLabels)}
+
+    labelsToExpand = df['assuntoPrincipal'].tolist()
+    labelsToExpand = [sub.replace('+', '') for sub in labelsToExpand]
+
+    posArr = []
+
+    for label in labelsToExpand:
+        multilabelFinal = [0.0] * numberOfClasses
+        splitLabel = label.split(":")
+
+        for splits in splitLabel:
+            multilabelFinal[multiLabelIdDic[splits]] = 1.0
+
+        posArr.append(multilabelFinal.copy())
+
+    df['labels'] = posArr
+
+    df.drop(columns=['assuntoPrincipal'],inplace=True)
+
+    X_train, X_testval, y_train, y_testval = train_test_split(df['text'],df['labels'], test_size=test_split)#, stratify= df['labels'])
+
+    del df
+    gc.collect()
+
+    XTestval = pd.DataFrame()
+    XTestval['labels'] = y_testval.to_frame()
+    XTestval['text'] = X_testval.to_frame()
+
+    X_test, X_val, y_test, y_val = train_test_split(XTestval['text'],XTestval['labels'], test_size=test_split)#, stratify= XTestval['labels'] )
+
+    del XTestval
+    gc.collect()
+
+    XTrain = pd.DataFrame()
+    XTrain['labels'] = y_train.to_frame()
+    XTrain['text'] = X_train.to_frame()
+
+    XTest = pd.DataFrame()
+    XTest['labels'] = y_test.to_frame()
+    XTest['text'] = X_test.to_frame()
+
+    Xval = pd.DataFrame()
+    Xval['labels'] = y_val.to_frame()
+    Xval['text'] = X_val.to_frame()
+    
+    XTest.to_csv(os.path.join(ROOT_DIR,'data','small_tj','interm','test','test.csv'),index=False)
+    XTrain.to_csv(os.path.join(ROOT_DIR,'data','small_tj','interm','train','train.csv'),index=False)
+    Xval.to_csv(os.path.join(ROOT_DIR,'data','small_tj','interm','val','val.csv'),index=False)
+
+    with open(os.path.join(ROOT_DIR,'data','small_tj','interm','id2label.json'),'w') as f:
+        json.dump(id2label,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','small_tj','interm','label2id.json'),'w') as f:
+        json.dump(label2id,f)
+        f.close()
+
+    return None

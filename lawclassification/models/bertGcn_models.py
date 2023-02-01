@@ -79,7 +79,7 @@ class ensemble_model():
 
         self.bertGcnModel = Bert_GCN(self.id2label, self.label2id , 
                                      self.problemType, self.dataset.num_classes, 
-                                     self.hiddenChannels, self.device, self.finetunepath, self.flag_hierarchical , m=0.0)
+                                     self.hiddenChannels, self.device, self.finetunepath, self.flag_hierarchical , m=0.7)
 
         self.optimizer = torch.optim.AdamW(set_new_learning_rates(model = self.bertGcnModel,
                                                                   base_lr = self.bert_lr,
