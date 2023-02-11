@@ -91,7 +91,7 @@ def _deeptokenizer(df:pd.DataFrame,modelname:str):
 
     return [input_idslist,attention_masklist,token_type_idslist]
 
-def append_token_hier(dataname:str,modelname:str):
+def append_token_hier(dataname:str,modelname:str,hier_max_seg:int,hier_max_seg_length:int):
     
     dfTrain = pd.read_csv(os.path.join(ROOT_DIR,'data',dataname,'interm','train','train.csv'))
     dfTrain['split'] = 'train'
@@ -102,7 +102,7 @@ def append_token_hier(dataname:str,modelname:str):
 
     df = pd.concat([dfTrain,dfTest,dfVal],ignore_index=True)
 
-    encodedSenDeep = _hiersentencetokenizer(df,64,128,dataname,modelname)
+    encodedSenDeep = _hiersentencetokenizer(df,hier_max_seg,hier_max_seg_length,dataname,modelname)
     df['token_s_hier_id'] = encodedSenDeep[0]
     df['token_s_hier_att'] = encodedSenDeep[1]
     df['token_s_hier_tid'] = encodedSenDeep[2]

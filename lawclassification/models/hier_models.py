@@ -127,7 +127,8 @@ class HierarchicalBert(nn.Module):
         #self.pooler_output = outputs
 
         #return SimpleOutput(last_hidden_state = outputs, hidden_states = outputs, pooler_output = outputs)
-        return SimpleOutput(pooler_output = outputs)
+        #return SimpleOutput(pooler_output = outputs)
+        return SimpleOutput(hidden_states = outputs , pooler_output = outputs)
         #return returnClass
 
 if __name__ == "__main__":

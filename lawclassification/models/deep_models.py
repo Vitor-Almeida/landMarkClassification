@@ -98,6 +98,8 @@ class deep_models():
 
         self.total_steps = len(self.train_dataloader) * self.epochs
 
+        #return_all_scores=True CHECAR!
+
         #da pra colocar tipo um config.json aqui que da pra mudar as parada de dropout, requires grad:
         self.model = AutoModelForSequenceClassification.from_pretrained(self.model_path, 
                                                                         local_files_only = True, 
@@ -108,6 +110,7 @@ class deep_models():
                                                                         label2id = self.dataset_train.label2id,
                                                                         output_attentions = False, #?
                                                                         output_hidden_states = False, #?
+                                                                        #return_all_scores=True, #### OPCIONAL PARA O SHAP!!!!!!!!!!!
                                                                         ################
                                                                         torch_dtype = torch.float32 
                                                                         #classifier_dropout = self.dropout, ###?
@@ -132,6 +135,8 @@ class deep_models():
                                                                   qtyLayers = self.qtyFracLayers,
                                                                   embeddings = True,
                                                                   gcn_lr = None))
+
+
 
         #self.optimizer = torch.optim.AdamW(set_learning_rates(self.lr,
         #                                                      self.decay_lr,

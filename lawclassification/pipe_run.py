@@ -2,6 +2,8 @@ import dataset.pipe_create as pipe
 import dataset.fast_pipe_graph_multi as fastGraphMulti
 import dataset.append_token_hier as app
 
+#we always need to run pipe. app. fastGraphMulti.
+
 def main(): 
     #pipe.yelp_review(max_data_size=20000,test_split=0.2)
     #pipe.dmoz_cats(test_split=0.2)
@@ -20,7 +22,14 @@ def main():
     #pipe.tj(test_split=0.2,max_classes=23,max_row=20000,selected_col='grupo')
     #pipe.tj(test_split=0.2,selected_col='grupo_Hid')
 
-    pipe.small_tj(test_split=0.2)
+    pipe.big_tj(test_split=0.2)
+    app.append_token_hier(dataname='big_tj',modelname='dominguesm.legal-bert-base-cased-ptbr',hier_max_seg=32,hier_max_seg_length=128)
+    #fastGraphMulti.fast_pipe_graph(path='big_tj',maxRows=1000000,windowSize=20,nThreads=16, train=False,modelname='dominguesm.legal-bert-base-cased-ptbr')
+
+    #pipe.small_tj(test_split=0.2)
+    #app.append_token_hier(dataname='small_tj',modelname='dominguesm.legal-bert-base-cased-ptbr')
+    #app.append_token_hier(dataname='small_tj',modelname='neuralmind.bert-base-portuguese-cased')
+    #fastGraphMulti.fast_pipe_graph(path='small_tj',maxRows=1000000,windowSize=20,nThreads=16, train=False,modelname='dominguesm.legal-bert-base-cased-ptbr')
 
     #fastGraphMulti.fast_pipe_graph(path='r8_chines',maxRows=1000000,windowSize=20,nThreads=16)
     #fastGraphMulti.fast_pipe_graph(path='ohsumed',maxRows=1000000,windowSize=20,nThreads=16)

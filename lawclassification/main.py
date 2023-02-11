@@ -6,6 +6,7 @@ from train.xgb_train import xgb_train
 import torch
 import gc
 import mlflow
+import shap
 
 #mlflow ui --backend-store-uri sqlite:///mlflow.db
 
@@ -42,6 +43,9 @@ def main():
 
             #da um log no melhor modelo:
             #mlflow.pytorch.log_model(train.model.model, "model")
+
+        #explainer = shap.Explainer(train.model.model)
+        #shap_values = explainer([1])
 
         del train
         gc.collect()

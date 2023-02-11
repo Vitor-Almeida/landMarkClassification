@@ -92,8 +92,10 @@ def _load_csv(path: str, maxRows: int, train: bool,modelname:str) -> pd.DataFram
     numChar = sum(len(s) for s in df['text'])
 
     #eurlex_lexbench , scotus_lexbench e o tj
-    if path == 'tj':
+    if path in ['small_tj','tj']:
         df['text'] = df['text'].apply(lambda row: row[:int(len(row)/3)])
+    elif path in ['big_tj'] :
+        df['text'] = df['text'].apply(lambda row: row[:int(len(row)/5)])
     elif numChar > 300_000_000: #limite da memoria
         df['text'] = df['text'].apply(lambda row: row[:int(len(row)/2)])
 
