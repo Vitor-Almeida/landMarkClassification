@@ -23,7 +23,7 @@ def main():
     #pipe.tj(test_split=0.2,selected_col='grupo_Hid')
 
     pipe.big_tj(test_split=0.2)
-    app.append_token_hier(dataname='big_tj',modelname='dominguesm.legal-bert-base-cased-ptbr',hier_max_seg=32,hier_max_seg_length=128)
+    app.append_token_hier(dataname='big_tj',modelname='dominguesm.legal-bert-base-cased-ptbr',hier_max_seg=64,hier_max_seg_length=128)
     #fastGraphMulti.fast_pipe_graph(path='big_tj',maxRows=1000000,windowSize=20,nThreads=16, train=False,modelname='dominguesm.legal-bert-base-cased-ptbr')
 
     #pipe.small_tj(test_split=0.2)
