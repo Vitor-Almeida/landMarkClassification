@@ -6,7 +6,7 @@ from train.xgb_train import xgb_train
 import torch
 import gc
 import mlflow
-import shap
+#import shap
 
 #mlflow ui --backend-store-uri sqlite:///mlflow.db
 

@@ -94,7 +94,7 @@ def trainModel(modelName, dataDic):
 
 
 def main():
-    dataDic = load_prepare_data(datasetName="big_tj")
+    dataDic = load_prepare_data(datasetName="small_tj")
     trainModel(modelName = "rufimelo.Legal-BERTimbau-sts-base-ma-v2", dataDic = dataDic)
 
 if __name__ == '__main__':

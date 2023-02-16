@@ -88,7 +88,8 @@ class deep_models():
                                           batch_size = self.batchsize,
                                           drop_last = True)
 
-        self.earlyStopper = EarlyStopping(patience=3, min_delta=0)                                  
+        #MUDAR: patience=6
+        self.earlyStopper = EarlyStopping(patience=10, min_delta=0)                                  
         
         self.num_labels_train = self.dataset_train.num_labels
         self.num_labels_test = self.dataset_test.num_labels

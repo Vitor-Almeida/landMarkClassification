@@ -12,8 +12,8 @@ def evallist(row):
 
     #slow:
     ########### TESTING: (64x128 OOM) #############:
-    #cols = ['labels','token_s_hier_id','token_s_hier_att','token_s_hier_tid','token_w_hier_id','token_w_hier_att','token_w_hier_tid']
-    cols = ['labels','token_s_hier_id','token_s_hier_att','token_s_hier_tid']
+    cols = ['labels','token_s_hier_id','token_s_hier_att','token_s_hier_tid','token_w_hier_id','token_w_hier_att','token_w_hier_tid']
+    #cols = ['labels','token_s_hier_id','token_s_hier_att','token_s_hier_tid']
     ############# TESTING: (64x128 OOM) ####################
 
     for col in cols:
@@ -46,17 +46,23 @@ class deep_data(Dataset):
         else:
             self.dataframe = pd.read_csv(os.path.join(ROOT_DIR,'data',self.name,'interm',typeSplit,typeSplit+'.csv'))
             ############# TESTING: (64x128 OOM) ####################
-            self.dataframe.drop(columns=['token_w_hier_id','token_w_hier_att','token_w_hier_tid'],inplace=True)
+            #self.dataframe.drop(columns=['token_w_hier_id','token_w_hier_att','token_w_hier_tid'],inplace=True)
             ############# TESTING: (64x128 OOM) ####################
 
         #self.dataframe = self.dataframe.apply(lambda row: evallist(row),axis=1)
-        self.dataframe['labels'] = self.dataframe['labels'].apply(lambda row: eval(row))
-        self.dataframe['token_s_hier_id'] = self.dataframe['token_s_hier_id'].apply(lambda row: eval(row))
+        if self.problem_type == 'single_label_classification':
+            pass
+        else:
+            self.dataframe['labels'] = self.dataframe['labels'].apply(lambda row: eval(row))
+        
+        #self.dataframe['token_s_hier_id'] = pd.eval(self.dataframe['token_s_hier_id'])
+
+        self.dataframe['token_s_hier_id'] = self.dataframe['token_s_hier_id'].apply(lambda row: eval(row)) #.apply(eval)
         self.dataframe['token_s_hier_att'] = self.dataframe['token_s_hier_att'].apply(lambda row: eval(row))
         self.dataframe['token_s_hier_tid'] = self.dataframe['token_s_hier_tid'].apply(lambda row: eval(row))
-        #self.dataframe['token_w_hier_id'] = self.dataframe['token_w_hier_id'].apply(lambda row: eval(row))
-        #self.dataframe['token_w_hier_att'] = self.dataframe['token_w_hier_att'].apply(lambda row: eval(row))
-        #self.dataframe['token_w_hier_tid'] = self.dataframe['token_w_hier_tid'].apply(lambda row: eval(row))
+        self.dataframe['token_w_hier_id'] = self.dataframe['token_w_hier_id'].apply(lambda row: eval(row))
+        self.dataframe['token_w_hier_att'] = self.dataframe['token_w_hier_att'].apply(lambda row: eval(row))
+        self.dataframe['token_w_hier_tid'] = self.dataframe['token_w_hier_tid'].apply(lambda row: eval(row))
 
         with open(os.path.join(os.path.join(ROOT_DIR,'data',self.name,'interm','id2label.json'))) as f:
             self.id2label =  json.load(f)
@@ -73,9 +79,9 @@ class deep_data(Dataset):
         self.token_s_hier_att = self.dataframe.iloc[:,4]
         self.token_s_hier_tid = self.dataframe.iloc[:,5]
         ############# TESTING: (64x128 OOM) ####################
-        #self.token_w_id = self.dataframe.iloc[:,6] #<-------- testar tirar isso aqui
-        #self.token_w_att = self.dataframe.iloc[:,7] #<-------- testar tirar isso aqui
-        #self.token_w_tid = self.dataframe.iloc[:,8] #<-------- testar tirar isso aqui
+        self.token_w_id = self.dataframe.iloc[:,6] #<-------- testar tirar isso aqui
+        self.token_w_att = self.dataframe.iloc[:,7] #<-------- testar tirar isso aqui
+        self.token_w_tid = self.dataframe.iloc[:,8] #<-------- testar tirar isso aqui
         ############# TESTING: (64x128 OOM) ####################
 
         self.max_length = max_length
