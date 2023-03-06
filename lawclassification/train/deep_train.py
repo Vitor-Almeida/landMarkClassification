@@ -5,7 +5,9 @@ import pickle
 from models.deep_models import deep_models
 from utils.deep_metrics import metrics_config, metrics_config_special, f1ajust_lexglue
 import mlflow
-
+import torch.nn.functional as F
+import numpy as np
+import pandas as pd
 
 class deep_train():
     """
@@ -159,6 +161,66 @@ class deep_train():
         epochLoss = epochLoss / batchItens
 
         return epochLoss.item()
+    
+    def infere_total(self):
+
+        #nao sei se funciona para multi-label:
+        #TOKENS talvez seja inutil, estoura a memoria no hier, 
+
+        self.model.model.eval()
+
+        predictions_labels = torch.tensor([]).to('cuda')
+        real_labels = torch.tensor([]).to('cuda')
+        predicted_labels = torch.tensor([]).to('cuda')
+        tokens = torch.tensor([]).to('cuda')
+        dataset_index = torch.tensor([]).to('cuda')
+
+        with torch.no_grad():
+            for _,batch in enumerate(self.model.full_inference_dataloader):
+                batch = {k: v.to(self.model.device) for k, v in batch.items()}
+
+                with torch.autocast(device_type=self.model.device.type, dtype=torch.float16, enabled=self.flag_mixed_precision):
+                    outputs = self.model.model(**batch)
+
+                if self.model.dataname in ['ecthr_b_lexbench','ecthr_a_lexbench','unfair_lexbench']:
+                    out,lab = f1ajust_lexglue(outputs.logits, batch['labels'].int(),self.model.device, False)
+                    self.metricsValEpochSpecial(out, lab)
+
+                predictions_labels = torch.cat((predictions_labels,F.softmax(outputs.logits,dim=1) ),dim=0)
+                real_labels = torch.cat((real_labels,batch['labels'].int().unsqueeze(1)),dim=0)
+                dataset_index = torch.cat((dataset_index,batch['dataset_index'].int().unsqueeze(1)),dim=0)
+                predicted_labels = torch.cat((predicted_labels,torch.argmax(outputs.logits, dim=1).unsqueeze(1)),dim=0)
+
+                tokens = torch.cat((tokens,batch['input_ids']),dim=0)
+
+                #tem q colocar um softmax aqui ou log
+        
+        predicted_labels_ID = predicted_labels.cpu().numpy()
+        real_labels_ID = real_labels.cpu().numpy()
+        dataset_index = dataset_index.cpu().numpy()
+
+        predicted_labels_ided = [self.model.dataset_full_inference.id2label[str(int(i))] for i in predicted_labels.squeeze(1).tolist()]
+        real_labels_ided = [self.model.dataset_full_inference.id2label[str(int(i))] for i in real_labels.squeeze(1).tolist()]
+
+        predictions_labels = predictions_labels.cpu().numpy()
+        tokens = tokens.cpu().numpy()
+        predicted_labels_ided = np.expand_dims(np.array(predicted_labels_ided),1)
+        real_labels_ided = np.expand_dims(np.array(real_labels_ided),1)
+
+        supportDf = np.concatenate((dataset_index,predicted_labels_ID,predicted_labels_ided,real_labels_ID,real_labels_ided),axis=1)
+
+        supportDf = pd.DataFrame(supportDf)
+
+        supportDf.rename(columns={supportDf.columns[-1]: "real_labels_ided",supportDf.columns[-2]: "real_labels_ID",supportDf.columns[-3]: "predicted_labels_ided",supportDf.columns[-4]: "predicted_labels_ID",supportDf.columns[-5]: "dataset_index"}, inplace=True)
+        supportDf = supportDf.astype({"real_labels_ided": str, "real_labels_ID": float,"predicted_labels_ided": str, "predicted_labels_ID": float,"dataset_index":float})
+        supportDf = supportDf.astype({"real_labels_ID": int,"predicted_labels_ID": int,"dataset_index":int})
+
+        textIndexed = pd.read_csv(self.model.dataset_lookup)
+
+        supportDf = pd.merge(textIndexed, on=['dataset_index'])
+
+        return predictions_labels, supportDf, tokens
+
 
     def fit_and_eval(self):
 

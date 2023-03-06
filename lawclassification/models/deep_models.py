@@ -1,6 +1,6 @@
 import random
 import numpy as np
-from dataset.dataset_load import deep_data
+from dataset.dataset_load import deep_data, deep_data_inference
 from models.hier_models import HierarchicalBert
 from transformers import AutoModelForSequenceClassification
 from transformers import PreTrainedModel, BertConfig
@@ -37,6 +37,8 @@ class deep_models():
         self.hier_max_seg = hier_max_seg
         self.hier_max_seg_length = hier_max_seg_length
 
+        self.dataset_lookup = os.path.join(ROOT_DIR,'data',self.dataname,'interm','index_text_lookup.csv')
+
         if self.flag_hierarchical:
             self.finetunepath = os.path.join(ROOT_DIR,'lawclassification','models','internal','hier',self.dataname,self.model_name)
         else:
@@ -65,7 +67,7 @@ class deep_models():
                                        problem_type = self.problem_type,
                                        flag_hierarchical = self.flag_hierarchical,
                                        flag_bertgcn = False)
-
+        
         self.dataset_test = deep_data(typeSplit='test', 
                                       max_length = self.max_char_length, 
                                       hier_max_seg = self.hier_max_seg,
@@ -74,6 +76,15 @@ class deep_models():
                                       problem_type = self.problem_type,
                                       flag_hierarchical = self.flag_hierarchical,
                                       flag_bertgcn = False)
+        
+        self.dataset_full_inference = deep_data_inference(typeSplit='', 
+                                       max_length = self.max_char_length, 
+                                       hier_max_seg = self.hier_max_seg,
+                                       hier_max_seg_length= self.hier_max_seg_length,
+                                       dataname = self.dataname,
+                                       problem_type = self.problem_type,
+                                       flag_hierarchical = self.flag_hierarchical,
+                                       flag_bertgcn = False)
 
         self.val_dataloader = DataLoader(dataset = self.dataset_val,
                                          batch_size = self.batchsize,
@@ -87,15 +98,24 @@ class deep_models():
         self.test_dataloader = DataLoader(dataset = self.dataset_test,
                                           batch_size = self.batchsize,
                                           drop_last = True)
+        
+        self.full_inference_dataloader = DataLoader(dataset = self.dataset_full_inference,
+                                          batch_size = self.batchsize * 4, ###mudar aqui?
+                                          drop_last = True) ###mudar aqui ???
 
         #MUDAR: patience=6
-        self.earlyStopper = EarlyStopping(patience=10, min_delta=0)                                  
+        self.earlyStopper = EarlyStopping(patience=5, min_delta=0)                                  
         
         self.num_labels_train = self.dataset_train.num_labels
         self.num_labels_test = self.dataset_test.num_labels
         self.num_labels_val = self.dataset_val.num_labels
 
-        self.num_labels = self.num_labels_train
+        
+        if problem_type == 'single_label_classification':
+            #problema se o train não tiver todas as labels do problema, "problema?"
+            self.num_labels = len(np.unique(np.array(self.dataset_val.dataframe['labels'].to_list() + self.dataset_test.dataframe['labels'].to_list() + self.dataset_train.dataframe['labels'].to_list())))
+        else:
+            self.num_labels = self.num_labels_train
 
         self.total_steps = len(self.train_dataloader) * self.epochs
 
@@ -106,7 +126,7 @@ class deep_models():
                                                                         local_files_only = True, 
                                                                         output_scores = True,
                                                                         problem_type = self.problem_type,
-                                                                        num_labels = self.num_labels_train,
+                                                                        num_labels = self.num_labels,
                                                                         id2label = self.dataset_train.id2label,
                                                                         label2id = self.dataset_train.label2id,
                                                                         output_attentions = False, #?

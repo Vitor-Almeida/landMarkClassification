@@ -1728,3 +1728,218 @@ def big_tj_single(test_split:float) -> None:
         f.close()
 
     return None
+
+def big_tj_single_mixed(test_split:float) -> None:
+
+    path = os.path.join(ROOT_DIR,'data','big_tj','raw','TrainingSet_s34787.csv.xz')
+    df = pd.read_csv(path)
+
+    path_test = os.path.join(ROOT_DIR,'data','big_tj','raw','TestSet_s34787.csv.xz')
+    df_test = pd.read_csv(path_test)
+
+    pathCTexto_tj = os.path.join(ROOT_DIR,'data','big_tj','raw','dataset1_tj.csv')
+    pathCTexto_cnj = os.path.join(ROOT_DIR,'data','big_tj','raw','dataset3_cnj.csv')
+
+    df_c_texto_tj = pd.read_csv(pathCTexto_tj)
+    df_c_texto_tj = df_c_texto_tj[['documento_id','processo_id','texto_tratado']]
+
+    df_c_texto_cnj = pd.read_csv(pathCTexto_cnj)
+
+    df_c_texto_cnj = df_c_texto_cnj[['documento_id','processo_id','texto_tratado']]
+
+    df_c_texto = pd.concat([df_c_texto_tj,df_c_texto_cnj],ignore_index=True)
+    df_c_texto.drop_duplicates(inplace=True)
+
+    df = df.merge(df_c_texto,on=['processo_id','documento_id'])
+    df_test = df_test.merge(df_c_texto,on=['processo_id','documento_id'])
+
+    df['new_id'] = df['processo_id'].astype(str) + '0' + df['documento_id'].astype(str)
+    df['new_id'] = df['new_id'].astype(int)
+    df_test['new_id'] = df_test['processo_id'].astype(str) + '0' + df_test['documento_id'].astype(str)
+    df_test['new_id'] = df_test['new_id'].astype(int)
+
+    df.rename(columns={'texto_tratado':'text'},inplace=True)
+    df_test.rename(columns={'texto_tratado':'text'},inplace=True)
+    df.set_index(['new_id'],drop=True,inplace=True)
+    df_test.set_index(['new_id'],drop=True,inplace=True)
+    
+    cols = ['text','assuntoPrincipal']
+
+    df = df[cols].drop_duplicates()
+    df_test = df_test[cols].drop_duplicates()
+
+    df['split'] = 'train'
+    df_test['split'] = 'test'
+
+    df = pd.concat([df,df_test],ignore_index=True)
+
+    df = df.sample(frac=1)
+
+    df = df[df['text'].str.len() >= 10*2048]
+
+    #len(df[df['text'].str.len() >= 10*1024])
+    #43766
+    #len(df[df['text'].str.len() >= 10*2048])
+    #23436
+    #len(df[df['text'].str.len() >= 10*4096])
+    #7137
+
+    unique, counts = np.unique(np.array(df['assuntoPrincipal']), return_counts=True)
+    arr1inds = counts.argsort()
+    sorted_arr2 = unique[arr1inds[::-1]]
+
+    problemList = sorted_arr2[:]
+
+    id2label = {idx:label for idx, label in enumerate(problemList.tolist())}
+    label2id = {label:idx for idx, label in enumerate(problemList.tolist())}
+
+    df['labels'] = df['assuntoPrincipal'].apply(lambda row: label2id[row])
+
+    df.drop(columns=['assuntoPrincipal'],inplace=True)
+
+    X_train, X_testval, y_train, y_testval = train_test_split(df['text'],df['labels'], test_size=test_split)#, stratify= df['labels'])
+
+    del df
+    gc.collect()
+
+    XTestval = pd.DataFrame()
+    XTestval['labels'] = y_testval.to_frame()
+    XTestval['text'] = X_testval.to_frame()
+
+    X_test, X_val, y_test, y_val = train_test_split(XTestval['text'],XTestval['labels'], test_size=test_split)#, stratify= XTestval['labels'] )
+
+    del XTestval
+    gc.collect()
+
+    XTrain = pd.DataFrame()
+    XTrain['labels'] = y_train.to_frame()
+    XTrain['text'] = X_train.to_frame()
+
+    XTest = pd.DataFrame()
+    XTest['labels'] = y_test.to_frame()
+    XTest['text'] = X_test.to_frame()
+
+    Xval = pd.DataFrame()
+    Xval['labels'] = y_val.to_frame()
+    Xval['text'] = X_val.to_frame()
+    
+    XTest.to_csv(os.path.join(ROOT_DIR,'data','big_tj_single_mixed','interm','test','test.csv'),index=False)
+    XTrain.to_csv(os.path.join(ROOT_DIR,'data','big_tj_single_mixed','interm','train','train.csv'),index=False)
+    Xval.to_csv(os.path.join(ROOT_DIR,'data','big_tj_single_mixed','interm','val','val.csv'),index=False)
+
+    with open(os.path.join(ROOT_DIR,'data','big_tj_single_mixed','interm','id2label.json'),'w') as f:
+        json.dump(id2label,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','big_tj_single_mixed','interm','label2id.json'),'w') as f:
+        json.dump(label2id,f)
+        f.close()
+
+    return None
+
+def small_tj_single(test_split:float) -> None:
+
+    path = os.path.join(ROOT_DIR,'data','small_tj','raw','TrainingSet_s34787.csv.xz')
+    df = pd.read_csv(path)
+
+    path_test = os.path.join(ROOT_DIR,'data','small_tj','raw','TestSet_s34787.csv.xz')
+    df_test = pd.read_csv(path_test)
+
+    pathCTexto_tj = os.path.join(ROOT_DIR,'data','tj','raw','dataset_tjce_v1_trata_texto.csv.zip')
+    #pathCTexto_cnj = os.path.join(ROOT_DIR,'data','big_tj','raw','dataset3_cnj.csv')
+
+    df_c_texto_tj = pd.read_csv(pathCTexto_tj)
+    df_c_texto_tj = df_c_texto_tj[['documento_id','processo_id','texto_tratado']]
+
+    #df_c_texto_cnj[df_c_texto_cnj['grupo_assunto'].str.contains("DIREITO DO TRABALHO")].sample(n=50)
+
+    #df_c_texto_cnj = pd.read_csv(pathCTexto_cnj)
+
+    #df_c_texto_cnj = df_c_texto_cnj[df_c_texto_cnj['texto_tratado'].str.len() <= 32000]
+    #exportar50 = df_c_texto_cnj[df_c_texto_cnj['grupo_assunto'].str.contains("DIREITO DO TRABALHO")].sample(n=50)
+    #exportar50.to_csv("amostrar50.csv",sep=",",index=False,encoding='latin',errors="replace")
+
+    #df_c_texto_cnj = df_c_texto_cnj[['documento_id','processo_id','texto_tratado']]
+
+    df_c_texto = df_c_texto_tj
+    df_c_texto.drop_duplicates(inplace=True)
+
+    df = df.merge(df_c_texto,on=['processo_id','documento_id'])
+    df_test = df_test.merge(df_c_texto,on=['processo_id','documento_id'])
+
+    df['new_id'] = df['processo_id'].astype(str) + '0' + df['documento_id'].astype(str)
+    df['new_id'] = df['new_id'].astype(int)
+    df_test['new_id'] = df_test['processo_id'].astype(str) + '0' + df_test['documento_id'].astype(str)
+    df_test['new_id'] = df_test['new_id'].astype(int)
+
+    df.rename(columns={'texto_tratado':'text'},inplace=True)
+    df_test.rename(columns={'texto_tratado':'text'},inplace=True)
+    df.set_index(['new_id'],drop=True,inplace=True)
+    df_test.set_index(['new_id'],drop=True,inplace=True)
+    
+    cols = ['text','assuntoPrincipal']
+
+    df = df[cols].drop_duplicates()
+    df_test = df_test[cols].drop_duplicates()
+
+    df['split'] = 'train'
+    df_test['split'] = 'test'
+
+    df = pd.concat([df,df_test],ignore_index=True)
+
+    df = df.sample(frac=1)
+
+    unique, counts = np.unique(np.array(df['assuntoPrincipal']), return_counts=True)
+    arr1inds = counts.argsort()
+    sorted_arr2 = unique[arr1inds[::-1]]
+
+    problemList = sorted_arr2[:]
+
+    id2label = {idx:label for idx, label in enumerate(problemList.tolist())}
+    label2id = {label:idx for idx, label in enumerate(problemList.tolist())}
+
+    df['labels'] = df['assuntoPrincipal'].apply(lambda row: label2id[row])
+
+    df.drop(columns=['assuntoPrincipal'],inplace=True)
+
+    X_train, X_testval, y_train, y_testval = train_test_split(df[df['split']=='train']['text'],df[df['split']=='train']['labels'], test_size=0.00000000001)#, stratify= df['labels'])
+
+    #X_train, X_testval, y_train, y_testval = train_test_split(df['text'],df['labels'], test_size=test_split)#, stratify= df['labels'])
+
+    #del df
+    #gc.collect()
+
+    #XTestval = pd.DataFrame()
+    #XTestval['labels'] = y_testval.to_frame()
+    #XTestval['text'] = X_testval.to_frame()
+
+    X_test, X_val, y_test, y_val = train_test_split(df[df['split']=='test']['text'],df[df['split']=='test']['labels'], test_size=test_split)#, stratify= XTestval['labels'] )
+
+    #X_test, X_val, y_test, y_val = train_test_split(XTestval['text'],XTestval['labels'], test_size=test_split)#, stratify= XTestval['labels'] )
+
+    #del XTestval
+    #gc.collect()
+
+    XTrain = pd.DataFrame()
+    XTrain['labels'] = y_train.to_frame()
+    XTrain['text'] = X_train.to_frame()
+
+    XTest = pd.DataFrame()
+    XTest['labels'] = y_test.to_frame()
+    XTest['text'] = X_test.to_frame()
+
+    Xval = pd.DataFrame()
+    Xval['labels'] = y_val.to_frame()
+    Xval['text'] = X_val.to_frame()
+    
+    XTest.to_csv(os.path.join(ROOT_DIR,'data','small_tj_single','interm','test','test.csv'),index=False)
+    XTrain.to_csv(os.path.join(ROOT_DIR,'data','small_tj_single','interm','train','train.csv'),index=False)
+    Xval.to_csv(os.path.join(ROOT_DIR,'data','small_tj_single','interm','val','val.csv'),index=False)
+
+    with open(os.path.join(ROOT_DIR,'data','small_tj_single','interm','id2label.json'),'w') as f:
+        json.dump(id2label,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','small_tj_single','interm','label2id.json'),'w') as f:
+        json.dump(label2id,f)
+        f.close()
+
+    return None

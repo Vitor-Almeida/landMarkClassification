@@ -6,6 +6,7 @@ from train.xgb_train import xgb_train
 import torch
 import gc
 import mlflow
+from cleanlab.filter import find_label_issues
 #import shap
 
 #mlflow ui --backend-store-uri sqlite:///mlflow.db
@@ -40,6 +41,14 @@ def main():
 
             train = deep_train(experiment)
             train.fit_and_eval()
+
+            #multi-label might not work here:
+            predictions_labels, supportDf, tokens = train.infere_total()
+            #ordered_label_issues = find_label_issues(
+            #    labels=predictions_labels['labels'],
+            #    pred_probs=predictions_labels['pred_probs'],  # predicted probabilities from any model (ideally out-of-sample predictions)
+            #    return_indices_ranked_by='self_confidence',
+            #)
 
             #da um log no melhor modelo:
             #mlflow.pytorch.log_model(train.model.model, "model")

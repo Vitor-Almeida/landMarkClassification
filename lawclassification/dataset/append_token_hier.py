@@ -112,8 +112,17 @@ def append_token_hier(dataname:str,modelname:str,hier_max_seg:int,hier_max_seg_l
     df['token_w_hier_att'] = encodedTextDeep[1]
     df['token_w_hier_tid'] = encodedTextDeep[2]
 
+    df = df.reset_index(drop=True)
+    df = df.reset_index()
+    df['dataset_index'] = df['index']
+    df.drop(columns=['index'],inplace=True)
+
     df[df['split']=='train'].to_csv(os.path.join(ROOT_DIR,'data',dataname,'interm','train','train.csv'),index=False)
     df[df['split']=='test'].to_csv(os.path.join(ROOT_DIR,'data',dataname,'interm','test','test.csv'),index=False)
     df[df['split']=='val'].to_csv(os.path.join(ROOT_DIR,'data',dataname,'interm','val','val.csv'),index=False)
+
+    df = df[['text','split','dataset_index']]
+
+    df.to_csv(os.path.join(ROOT_DIR,'data',dataname,'interm','index_text_lookup.csv'),index=False)
 
     return None
