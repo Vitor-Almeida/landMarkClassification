@@ -6,6 +6,7 @@ from train.xgb_train import xgb_train
 import torch
 import gc
 import mlflow
+import pandas as pd
 from cleanlab.filter import find_label_issues
 #import shap
 
@@ -44,11 +45,17 @@ def main():
 
             #multi-label might not work here:
             predictions_labels, supportDf, tokens = train.infere_total()
-            #ordered_label_issues = find_label_issues(
-            #    labels=predictions_labels['labels'],
-            #    pred_probs=predictions_labels['pred_probs'],  # predicted probabilities from any model (ideally out-of-sample predictions)
-            #    return_indices_ranked_by='self_confidence',
-            #)
+            ordered_label_issues = find_label_issues(
+                labels = supportDf['real_labels_ID'],
+                pred_probs = predictions_labels,  # predicted probabilities from any model (ideally out-of-sample predictions) <==out-of-sample = fazer CV
+                return_indices_ranked_by='self_confidence',
+            )
+
+            ordered_label_issues_df = pd.DataFrame(ordered_label_issues,columns= ['dataset_index'])
+            ordered_label_issues_df['label_problem'] = "label_problem"
+            supportDf = supportDf.merge(ordered_label_issues_df, how='left', on=['dataset_index'])
+            supportDf['label_problem'] = supportDf['label_problem'].fillna('OK')
+            supportDf.to_csv(expSubName + experiment['dataname']+'.csv',index=False,encoding='Latin')
 
             #da um log no melhor modelo:
             #mlflow.pytorch.log_model(train.model.model, "model")

@@ -179,6 +179,8 @@ class deep_train():
             for _,batch in enumerate(self.model.full_inference_dataloader):
                 batch = {k: v.to(self.model.device) for k, v in batch.items()}
 
+                curDIndex = batch.pop('dataset_index')
+
                 with torch.autocast(device_type=self.model.device.type, dtype=torch.float16, enabled=self.flag_mixed_precision):
                     outputs = self.model.model(**batch)
 
@@ -188,7 +190,7 @@ class deep_train():
 
                 predictions_labels = torch.cat((predictions_labels,F.softmax(outputs.logits,dim=1) ),dim=0)
                 real_labels = torch.cat((real_labels,batch['labels'].int().unsqueeze(1)),dim=0)
-                dataset_index = torch.cat((dataset_index,batch['dataset_index'].int().unsqueeze(1)),dim=0)
+                dataset_index = torch.cat((dataset_index,curDIndex.unsqueeze(1)),dim=0)
                 predicted_labels = torch.cat((predicted_labels,torch.argmax(outputs.logits, dim=1).unsqueeze(1)),dim=0)
 
                 tokens = torch.cat((tokens,batch['input_ids']),dim=0)
@@ -217,7 +219,7 @@ class deep_train():
 
         textIndexed = pd.read_csv(self.model.dataset_lookup)
 
-        supportDf = pd.merge(textIndexed, on=['dataset_index'])
+        supportDf = supportDf.merge(textIndexed, how='left', on=['dataset_index'])
 
         return predictions_labels, supportDf, tokens
 
