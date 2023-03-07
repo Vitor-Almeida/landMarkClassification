@@ -207,6 +207,8 @@ class deep_data_inference(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
+        dataset_index1 = torch.tensor(self.dataset_index[idx],dtype=torch.int32)
+
         if self.problem_type == 'single_label_classification':
             labels1 = torch.tensor(self.labels[idx],dtype=torch.int64)
         else:
@@ -222,7 +224,7 @@ class deep_data_inference(Dataset):
                      'attention_mask': token_s_hier_att1,
                      'token_type_ids': token_s_hier_tid1,
                      'labels': labels1,
-                     'dataset_index' : self.dataset_index
+                     'dataset_index' : dataset_index1
                     }
 
         else:
@@ -235,7 +237,7 @@ class deep_data_inference(Dataset):
                     'attention_mask': token_w_att1,
                     #'token_type_ids': inputs["token_type_ids"].squeeze(0),# <--- fix for other models
                     'labels': labels1,
-                    'dataset_index' : self.dataset_index
+                    'dataset_index' : dataset_index1
                     }
 
         return batch
