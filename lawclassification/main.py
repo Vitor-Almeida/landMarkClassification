@@ -29,6 +29,8 @@ def _find_label_export_all(predictions_labels, supportDf, tokens):
     return supportDf
 
 #mlflow ui --backend-store-uri sqlite:///mlflow.db
+#tensorboard --logdir=./log/Hier_debug
+
 
 def main():
 
@@ -49,9 +51,6 @@ def main():
 
         expSubName = '[Deep_Hier]' if bool(experiment['hierarchical']) else '[Deep]'
 
-        #colocar uma condicao aqui pra rodar o tokenizer no csv pelo modelo.
-
-        #outro tipo de experimento poderia ser dataname+modelo+'busca hyper'
         mlflow.set_experiment(expSubName + experiment['dataname'])
 
         with mlflow.start_run(run_name=experiment['descripton']):

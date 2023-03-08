@@ -8,6 +8,22 @@ from utils.definitions import ROOT_DIR
 #import spacy
 #import re
 
+def returncollist(problem_type,flag_hierarchical):
+
+    if flag_hierarchical:
+        if problem_type == "single_label_classification":
+            cols = ['token_s_hier_id','token_s_hier_att','token_s_hier_tid']
+        else:
+            cols = ['labels','token_s_hier_id','token_s_hier_att','token_s_hier_tid']
+    else:
+        if problem_type == "single_label_classification":
+            cols = ['token_s_hier_id','token_s_hier_att','token_s_hier_tid','token_w_hier_id','token_w_hier_att','token_w_hier_tid']
+        else:
+            cols = ['labels','token_s_hier_id','token_s_hier_att','token_s_hier_tid','token_w_hier_id','token_w_hier_att','token_w_hier_tid']
+
+    return cols
+
+
 def evallist(row,problem_type,flag_hierarchical):
 
     #slow:
@@ -52,11 +68,10 @@ class deep_data(Dataset):
             if self.flag_hierarchical:
                 self.dataframe.drop(columns=['token_w_hier_id','token_w_hier_att','token_w_hier_tid'],inplace=True)
 
-        if self.problem_type == 'single_label_classification':
-            self.dataframe = self.dataframe.apply(lambda row: evallist(row,self.problem_type,self.flag_hierarchical),axis=1)
-        else:
-            self.dataframe['labels'] = self.dataframe['labels'].apply(eval)
-            self.dataframe = self.dataframe.apply(lambda row: evallist(row,self.problem_type,self.flag_hierarchical),axis=1)
+        listToEval = returncollist(self.problem_type,self.flag_hierarchical)
+
+        #self.dataframe = self.dataframe.apply(lambda row: evallist(row,self.problem_type,self.flag_hierarchical),axis=1)
+        self.dataframe[listToEval] = self.dataframe[listToEval].applymap(eval)
         
         self.dataframe.drop(columns=['dataset_index'],inplace=True)
 
@@ -153,7 +168,10 @@ class deep_data_inference(Dataset):
         if self.flag_hierarchical:
             self.dataframe.drop(columns=['token_w_hier_id','token_w_hier_att','token_w_hier_tid'],inplace=True)
 
-        self.dataframe = self.dataframe.apply(lambda row: evallist(row,self.problem_type,self.flag_hierarchical),axis=1)
+        listToEval = returncollist(self.problem_type,self.flag_hierarchical)
+
+        #self.dataframe = self.dataframe.apply(lambda row: evallist(row,self.problem_type,self.flag_hierarchical),axis=1)
+        self.dataframe[listToEval] = self.dataframe[listToEval].applymap(eval)
         
         with open(os.path.join(os.path.join(ROOT_DIR,'data',self.name,'interm','id2label.json'))) as f:
             self.id2label =  json.load(f)

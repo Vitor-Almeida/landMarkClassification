@@ -2117,27 +2117,27 @@ def small_tj_single_cross(test_split:float) -> None:
 
     ############################# FALTA SO A EXPORTACAO DOS ARQUIVOS #########################################
 
-    XTrain = pd.DataFrame()
-    XTrain['labels'] = y_train.to_frame()
-    XTrain['text'] = X_train.to_frame()
+    #XTrain = pd.DataFrame()
+    #XTrain['labels'] = y_train.to_frame()
+    #XTrain['text'] = X_train.to_frame()
 
-    XTest = pd.DataFrame()
-    XTest['labels'] = y_test.to_frame()
-    XTest['text'] = X_test.to_frame()
+    #XTest = pd.DataFrame()
+    #XTest['labels'] = y_test.to_frame()
+    #XTest['text'] = X_test.to_frame()
 
-    Xval = pd.DataFrame()
-    Xval['labels'] = y_val.to_frame()
-    Xval['text'] = X_val.to_frame()
+    #Xval = pd.DataFrame()
+    #Xval['labels'] = y_val.to_frame()
+    #Xval['text'] = X_val.to_frame()
     
-    XTest.to_csv(os.path.join(ROOT_DIR,'data','small_tj_single','interm','test','test.csv'),index=False)
-    XTrain.to_csv(os.path.join(ROOT_DIR,'data','small_tj_single','interm','train','train.csv'),index=False)
-    Xval.to_csv(os.path.join(ROOT_DIR,'data','small_tj_single','interm','val','val.csv'),index=False)
+    #XTest.to_csv(os.path.join(ROOT_DIR,'data','small_tj_single','interm','test','test.csv'),index=False)
+    #XTrain.to_csv(os.path.join(ROOT_DIR,'data','small_tj_single','interm','train','train.csv'),index=False)
+    #Xval.to_csv(os.path.join(ROOT_DIR,'data','small_tj_single','interm','val','val.csv'),index=False)
 
-    with open(os.path.join(ROOT_DIR,'data','small_tj_single','interm','id2label.json'),'w') as f:
-        json.dump(id2label,f)
-        f.close()
-    with open(os.path.join(ROOT_DIR,'data','small_tj_single','interm','label2id.json'),'w') as f:
-        json.dump(label2id,f)
-        f.close()
+    #with open(os.path.join(ROOT_DIR,'data','small_tj_single','interm','id2label.json'),'w') as f:
+    #    json.dump(id2label,f)
+    #    f.close()
+    #with open(os.path.join(ROOT_DIR,'data','small_tj_single','interm','label2id.json'),'w') as f:
+    #    json.dump(label2id,f)
+    #    f.close()
 
     return None

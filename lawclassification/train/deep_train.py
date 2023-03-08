@@ -7,6 +7,7 @@ from utils.deep_metrics import metrics_config, metrics_config_special, f1ajust_l
 import mlflow
 import torch.nn.functional as F
 import numpy as np
+import torch.profiler
 import pandas as pd
 
 class deep_train():
@@ -102,6 +103,8 @@ class deep_train():
 
             epochLoss += loss * batch['input_ids'].size()[1]
             batchItens += batch['input_ids'].size()[1]
+
+            self.prof.step()
 
         self.model.scheduler.step()
 
@@ -241,6 +244,14 @@ class deep_train():
 
     def fit_and_eval(self):
 
+        self.prof = torch.profiler.profile(
+                schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=2),
+                on_trace_ready=torch.profiler.tensorboard_trace_handler('./log/Hier_debug1'),
+                profile_memory=True,
+                record_shapes=True,
+                with_stack=True)
+        self.prof.start()
+
         for epoch_i in tqdm(range(0, self.model.epochs)):
 
             trainLoss = self.train_loop()
@@ -262,6 +273,8 @@ class deep_train():
 
             if self.model.earlyStopper.early_stop(testLoss):
                 break
+
+        self.prof.stop()             
 
         valLoss = self.val_loop()
         metric = self.metricsValEpoch.compute()

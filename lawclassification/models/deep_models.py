@@ -104,7 +104,7 @@ class deep_models():
                                           drop_last = True) ###mudar aqui ???
 
         #MUDAR: patience=6
-        self.earlyStopper = EarlyStopping(patience=3, min_delta=0)                                  
+        self.earlyStopper = EarlyStopping(patience=5, min_delta=0)                                  
         
         self.num_labels_train = self.dataset_train.num_labels
         self.num_labels_test = self.dataset_test.num_labels
