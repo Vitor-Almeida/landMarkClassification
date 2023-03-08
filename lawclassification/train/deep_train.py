@@ -172,7 +172,7 @@ class deep_train():
         predictions_labels = torch.tensor([]).to('cuda')
         real_labels = torch.tensor([]).to('cuda')
         predicted_labels = torch.tensor([]).to('cuda')
-        tokens = torch.tensor([]).to('cuda')
+        #tokens = torch.tensor([]).to('cuda')
         dataset_index = torch.tensor([]).to('cuda')
 
         with torch.no_grad():
@@ -193,7 +193,7 @@ class deep_train():
                 dataset_index = torch.cat((dataset_index,curDIndex.unsqueeze(1)),dim=0)
                 predicted_labels = torch.cat((predicted_labels,torch.argmax(outputs.logits, dim=1).unsqueeze(1)),dim=0)
 
-                tokens = torch.cat((tokens,batch['input_ids']),dim=0)
+                #tokens = torch.cat((tokens,batch['input_ids']),dim=0)
 
                 #tem q colocar um softmax aqui ou log
         
@@ -205,7 +205,7 @@ class deep_train():
         real_labels_ided = [self.model.dataset_full_inference.id2label[str(int(i))] for i in real_labels.squeeze(1).tolist()]
 
         predictions_labels = predictions_labels.cpu().numpy()
-        tokens = tokens.cpu().numpy()
+        #tokens = tokens.cpu().numpy()
         predicted_labels_ided = np.expand_dims(np.array(predicted_labels_ided),1)
         real_labels_ided = np.expand_dims(np.array(real_labels_ided),1)
 
@@ -220,6 +220,21 @@ class deep_train():
         textIndexed = pd.read_csv(self.model.dataset_lookup)
 
         supportDf = supportDf.merge(textIndexed, how='left', on=['dataset_index'])
+        supportDf[['predicted_raiz_1','predicted_folha_2','predicted_folha_3']] = supportDf['predicted_labels_ided'].str.split('_/_', expand=True)
+        supportDf.drop(columns=['predicted_labels_ided'],inplace=True)
+
+        supportDf[['real_raiz_1','real_folha_2','real_folha_3']] = supportDf['real_labels_ided'].str.split('_/_', expand=True)
+        supportDf.drop(columns=['real_labels_ided'],inplace=True)
+
+        supportDf['check_1'] = supportDf['predicted_raiz_1'] == supportDf['real_raiz_1']
+        supportDf['check_2'] = supportDf['predicted_folha_2'] == supportDf['real_folha_2']
+        supportDf['check_3'] = supportDf['predicted_folha_3'] == supportDf['real_folha_3']
+        supportDf['check_1_2'] = (supportDf['predicted_raiz_1'] == supportDf['real_raiz_1']) & (supportDf['predicted_folha_2'] == supportDf['real_folha_2'])
+        supportDf['check_1_2_3'] = (supportDf['predicted_raiz_1'] == supportDf['real_raiz_1']) & (supportDf['predicted_folha_2'] == supportDf['real_folha_2']) & (supportDf['predicted_folha_3'] == supportDf['real_folha_3'])
+
+        tokens = '_'
+
+        supportDf[['check_1','check_2','check_3','check_1_2','check_1_2_3']] = supportDf[['check_1','check_2','check_3','check_1_2','check_1_2_3']].astype(int)
 
         return predictions_labels, supportDf, tokens
 

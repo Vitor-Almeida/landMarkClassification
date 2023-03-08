@@ -8,23 +8,24 @@ from utils.definitions import ROOT_DIR
 #import spacy
 #import re
 
-def evallist(row,problem_type):
+def evallist(row,problem_type,flag_hierarchical):
 
     #slow:
-    ########### TESTING: (64x128 OOM) #############:
-    if problem_type == "single_label_classification":
-        cols = ['token_s_hier_id','token_s_hier_att','token_s_hier_tid','token_w_hier_id','token_w_hier_att','token_w_hier_tid']
+    if flag_hierarchical:
+        if problem_type == "single_label_classification":
+            cols = ['token_s_hier_id','token_s_hier_att','token_s_hier_tid']
+        else:
+            cols = ['labels','token_s_hier_id','token_s_hier_att','token_s_hier_tid']
     else:
-        cols = ['labels','token_s_hier_id','token_s_hier_att','token_s_hier_tid','token_w_hier_id','token_w_hier_att','token_w_hier_tid']
-    #cols = ['labels','token_s_hier_id','token_s_hier_att','token_s_hier_tid']
-    ############# TESTING: (64x128 OOM) ####################
+        if problem_type == "single_label_classification":
+            cols = ['token_s_hier_id','token_s_hier_att','token_s_hier_tid','token_w_hier_id','token_w_hier_att','token_w_hier_tid']
+        else:
+            cols = ['labels','token_s_hier_id','token_s_hier_att','token_s_hier_tid','token_w_hier_id','token_w_hier_att','token_w_hier_tid']
 
     for col in cols:
         row[col] = eval(str(row[col]))
 
     return row
-
-#NLP = spacy.load('en_core_web_lg')
 
 class deep_data(Dataset):
     """
@@ -48,23 +49,16 @@ class deep_data(Dataset):
             self.dataframe = pd.concat([dataframeTrain,dataframeTest,dataframeVal],ignore_index=True)
         else:
             self.dataframe = pd.read_csv(os.path.join(ROOT_DIR,'data',self.name,'interm',typeSplit,typeSplit+'.csv'))
-            ############# TESTING: (64x128 OOM) ####################
-            #self.dataframe.drop(columns=['token_w_hier_id','token_w_hier_att','token_w_hier_tid'],inplace=True)
-            ############# TESTING: (64x128 OOM) ####################
+            if self.flag_hierarchical:
+                self.dataframe.drop(columns=['token_w_hier_id','token_w_hier_att','token_w_hier_tid'],inplace=True)
 
-        #self.dataframe = self.dataframe.apply(lambda row: evallist(row),axis=1)
         if self.problem_type == 'single_label_classification':
-            self.dataframe = self.dataframe.apply(lambda row: evallist(row,self.problem_type),axis=1)
+            self.dataframe = self.dataframe.apply(lambda row: evallist(row,self.problem_type,self.flag_hierarchical),axis=1)
         else:
             self.dataframe['labels'] = self.dataframe['labels'].apply(eval)
-            self.dataframe = self.dataframe.apply(lambda row: evallist(row,self.problem_type),axis=1)
+            self.dataframe = self.dataframe.apply(lambda row: evallist(row,self.problem_type,self.flag_hierarchical),axis=1)
         
-        #self.dataframe['token_s_hier_id'] = self.dataframe['token_s_hier_id'].apply(eval)
-        #self.dataframe['token_s_hier_att'] = self.dataframe['token_s_hier_att'].apply(eval)
-        ##self.dataframe['token_s_hier_tid'] = self.dataframe['token_s_hier_tid'].apply(eval)
-        #self.dataframe['token_w_hier_id'] = self.dataframe['token_w_hier_id'].apply(eval)
-        #self.dataframe['token_w_hier_att'] = self.dataframe['token_w_hier_att'].apply(eval)
-        #self.dataframe['token_w_hier_tid'] = self.dataframe['token_w_hier_tid'].apply(eval)
+        self.dataframe.drop(columns=['dataset_index'],inplace=True)
 
         with open(os.path.join(os.path.join(ROOT_DIR,'data',self.name,'interm','id2label.json'))) as f:
             self.id2label =  json.load(f)
@@ -80,11 +74,13 @@ class deep_data(Dataset):
         self.token_s_hier_id = self.dataframe.iloc[:,3]
         self.token_s_hier_att = self.dataframe.iloc[:,4]
         self.token_s_hier_tid = self.dataframe.iloc[:,5]
-        ############# TESTING: (64x128 OOM) ####################
-        self.token_w_id = self.dataframe.iloc[:,6] #<-------- testar tirar isso aqui
-        self.token_w_att = self.dataframe.iloc[:,7] #<-------- testar tirar isso aqui
-        self.token_w_tid = self.dataframe.iloc[:,8] #<-------- testar tirar isso aqui
-        ############# TESTING: (64x128 OOM) ####################
+
+        if self.flag_hierarchical:
+            pass
+        else:
+            self.token_w_id = self.dataframe.iloc[:,6] 
+            self.token_w_att = self.dataframe.iloc[:,7] 
+            self.token_w_tid = self.dataframe.iloc[:,8] 
 
         self.max_length = max_length
 
@@ -154,21 +150,11 @@ class deep_data_inference(Dataset):
         dataframeVal = pd.read_csv(os.path.join(ROOT_DIR,'data',self.name,'interm','val','val.csv'))
         self.dataframe = pd.concat([dataframeTrain,dataframeTest,dataframeVal],ignore_index=True)
 
-        ############# TESTING: (64x128 OOM) ####################
-        #self.dataframe.drop(columns=['token_w_hier_id','token_w_hier_att','token_w_hier_tid'],inplace=True)
-        ############# TESTING: (64x128 OOM) ####################
+        if self.flag_hierarchical:
+            self.dataframe.drop(columns=['token_w_hier_id','token_w_hier_att','token_w_hier_tid'],inplace=True)
 
-        #self.dataframe = self.dataframe.apply(lambda row: evallist(row),axis=1)
-
-        self.dataframe = self.dataframe.apply(lambda row: evallist(row,self.problem_type),axis=1)
+        self.dataframe = self.dataframe.apply(lambda row: evallist(row,self.problem_type,self.flag_hierarchical),axis=1)
         
-        #self.dataframe['token_s_hier_id'] = self.dataframe['token_s_hier_id'].apply(eval)
-        #self.dataframe['token_s_hier_att'] = self.dataframe['token_s_hier_att'].apply(eval)
-        ##self.dataframe['token_s_hier_tid'] = self.dataframe['token_s_hier_tid'].apply(eval)
-        #self.dataframe['token_w_hier_id'] = self.dataframe['token_w_hier_id'].apply(eval)
-        #self.dataframe['token_w_hier_att'] = self.dataframe['token_w_hier_att'].apply(eval)
-        #self.dataframe['token_w_hier_tid'] = self.dataframe['token_w_hier_tid'].apply(eval)
-
         with open(os.path.join(os.path.join(ROOT_DIR,'data',self.name,'interm','id2label.json'))) as f:
             self.id2label =  json.load(f)
             f.close()
@@ -185,9 +171,12 @@ class deep_data_inference(Dataset):
         self.token_s_hier_att = self.dataframe.iloc[:,4]
         self.token_s_hier_tid = self.dataframe.iloc[:,5]
         ############# TESTING: (64x128 OOM) ####################
-        self.token_w_id = self.dataframe.iloc[:,6] #<-------- testar tirar isso aqui
-        self.token_w_att = self.dataframe.iloc[:,7] #<-------- testar tirar isso aqui
-        self.token_w_tid = self.dataframe.iloc[:,8] #<-------- testar tirar isso aqui
+        if self.flag_hierarchical:
+            pass
+        else:
+            self.token_w_id = self.dataframe.iloc[:,6] 
+            self.token_w_att = self.dataframe.iloc[:,7] 
+            self.token_w_tid = self.dataframe.iloc[:,8] 
         ############# TESTING: (64x128 OOM) ####################
 
         self.max_length = max_length

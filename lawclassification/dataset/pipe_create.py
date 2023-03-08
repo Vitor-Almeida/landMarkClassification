@@ -1,5 +1,6 @@
 import pandas as pd
 from transformers import pipeline
+from sklearn.model_selection import KFold, StratifiedKFold, GroupKFold
 import os
 import json
 import gc
@@ -7,6 +8,47 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from utils.definitions import ROOT_DIR
 import re
+
+def _deparaCodigos(df):
+
+    deparaDf = pd.read_csv(os.path.join(ROOT_DIR,'data','big_tj','raw','deparaCodigos.csv'),encoding="Latin")
+    df = df.reset_index(drop=True)
+    df = df.reset_index()
+    df.rename(columns={'index':'old_index'},inplace=True)
+
+    dfAssunto = df[['old_index','assuntoPrincipal']].copy()
+
+    dfAssunto['assuntoPrincipal'] = dfAssunto['assuntoPrincipal'].str.replace('+','',regex=False)
+
+    dfAssunto[['raiz','folha_1','folha_2']] = dfAssunto['assuntoPrincipal'].str.split(":", expand = True)
+
+    dfAssunto.drop(columns=['assuntoPrincipal'],inplace=True)
+    dfAssunto = dfAssunto.astype(int)
+
+    dfAssunto = dfAssunto.merge(deparaDf,left_on='raiz',right_on='cod')
+    dfAssunto.rename(columns={'Assunto':'raiz_texto'},inplace=True)
+    dfAssunto.drop(columns=['cod'],inplace=True)
+
+    dfAssunto = dfAssunto.merge(deparaDf,left_on='folha_1',right_on='cod')
+    dfAssunto.rename(columns={'Assunto':'folha_1_texto'},inplace=True)
+    dfAssunto.drop(columns=['cod'],inplace=True)
+
+    dfAssunto = dfAssunto.merge(deparaDf,left_on='folha_2',right_on='cod')
+    dfAssunto.rename(columns={'Assunto':'folha_2_texto'},inplace=True)
+    dfAssunto.drop(columns=['cod'],inplace=True)
+
+    dfAssunto['assuntoPrincipal_texto'] = dfAssunto['raiz_texto'] + '_/_' + dfAssunto['folha_1_texto'] + '_/_' + dfAssunto['folha_2_texto']
+
+    dfAssunto = dfAssunto[['old_index','assuntoPrincipal_texto']]
+
+    df = df.merge(dfAssunto, how='left' , on='old_index')
+
+    df.drop(columns=['assuntoPrincipal','old_index'],inplace=True)
+    df.rename(columns={'assuntoPrincipal_texto':'assuntoPrincipal'},inplace=True)
+
+    df = df[['text','assuntoPrincipal','split']]
+
+    return df
 
 #pyton -m dataset.landMarkTorchDataset => rodar testes 
 
@@ -1673,11 +1715,17 @@ def big_tj_single(test_split:float) -> None:
 
     df = df.sample(frac=1)
 
+    df = _deparaCodigos(df)
+
     unique, counts = np.unique(np.array(df['assuntoPrincipal']), return_counts=True)
     arr1inds = counts.argsort()
     sorted_arr2 = unique[arr1inds[::-1]]
 
-    problemList = sorted_arr2[:]
+    max_classes = len(counts) - len(counts[counts <= 25]) # tirando exemplos com menos de 25 casos
+
+    problemList = sorted_arr2[:max_classes]
+
+    df = df[df['assuntoPrincipal'].isin(problemList)]
 
     id2label = {idx:label for idx, label in enumerate(problemList.tolist())}
     label2id = {label:idx for idx, label in enumerate(problemList.tolist())}
@@ -1686,23 +1734,23 @@ def big_tj_single(test_split:float) -> None:
 
     df.drop(columns=['assuntoPrincipal'],inplace=True)
 
-    X_train, X_testval, y_train, y_testval = train_test_split(df[df['split']=='train']['text'],df[df['split']=='train']['labels'], test_size=0.00000000001)#, stratify= df['labels'])
+    #X_train, X_testval, y_train, y_testval = train_test_split(df[df['split']=='train']['text'],df[df['split']=='train']['labels'], test_size=0.00000000001)#, stratify= df['labels'])
 
-    #X_train, X_testval, y_train, y_testval = train_test_split(df['text'],df['labels'], test_size=test_split)#, stratify= df['labels'])
+    X_train, X_testval, y_train, y_testval = train_test_split(df['text'],df['labels'], test_size=test_split, stratify= df['labels'])
 
-    #del df
-    #gc.collect()
+    del df
+    gc.collect()
 
-    #XTestval = pd.DataFrame()
-    #XTestval['labels'] = y_testval.to_frame()
-    #XTestval['text'] = X_testval.to_frame()
+    XTestval = pd.DataFrame()
+    XTestval['labels'] = y_testval.to_frame()
+    XTestval['text'] = X_testval.to_frame()
 
-    X_test, X_val, y_test, y_val = train_test_split(df[df['split']=='test']['text'],df[df['split']=='test']['labels'], test_size=test_split)#, stratify= XTestval['labels'] )
+    #X_test, X_val, y_test, y_val = train_test_split(df[df['split']=='test']['text'],df[df['split']=='test']['labels'], test_size=test_split)#, stratify= XTestval['labels'] )
 
-    #X_test, X_val, y_test, y_val = train_test_split(XTestval['text'],XTestval['labels'], test_size=test_split)#, stratify= XTestval['labels'] )
+    X_test, X_val, y_test, y_val = train_test_split(XTestval['text'],XTestval['labels'], test_size=test_split)#, stratify= XTestval['labels'] )
 
-    #del XTestval
-    #gc.collect()
+    del XTestval
+    gc.collect()
 
     XTrain = pd.DataFrame()
     XTrain['labels'] = y_train.to_frame()
@@ -1888,11 +1936,17 @@ def small_tj_single(test_split:float) -> None:
 
     df = df.sample(frac=1)
 
+    df = _deparaCodigos(df)
+
     unique, counts = np.unique(np.array(df['assuntoPrincipal']), return_counts=True)
     arr1inds = counts.argsort()
     sorted_arr2 = unique[arr1inds[::-1]]
 
-    problemList = sorted_arr2[:]
+    max_classes = len(counts) - len(counts[counts <= 10]) # tirando exemplos com menos de 10 casos
+
+    problemList = sorted_arr2[:max_classes]
+
+    df = df[df['assuntoPrincipal'].isin(problemList)]
 
     id2label = {idx:label for idx, label in enumerate(problemList.tolist())}
     label2id = {label:idx for idx, label in enumerate(problemList.tolist())}
@@ -1901,23 +1955,167 @@ def small_tj_single(test_split:float) -> None:
 
     df.drop(columns=['assuntoPrincipal'],inplace=True)
 
-    X_train, X_testval, y_train, y_testval = train_test_split(df[df['split']=='train']['text'],df[df['split']=='train']['labels'], test_size=0.00000000001)#, stratify= df['labels'])
+    X_train, X_testval, y_train, y_testval = train_test_split(df['text'],df['labels'], test_size=0.2, stratify= df['labels'])
 
     #X_train, X_testval, y_train, y_testval = train_test_split(df['text'],df['labels'], test_size=test_split)#, stratify= df['labels'])
 
-    #del df
-    #gc.collect()
+    del df
+    gc.collect()
 
-    #XTestval = pd.DataFrame()
-    #XTestval['labels'] = y_testval.to_frame()
-    #XTestval['text'] = X_testval.to_frame()
+    XTestval = pd.DataFrame()
+    XTestval['labels'] = y_testval.to_frame()
+    XTestval['text'] = X_testval.to_frame()
 
-    X_test, X_val, y_test, y_val = train_test_split(df[df['split']=='test']['text'],df[df['split']=='test']['labels'], test_size=test_split)#, stratify= XTestval['labels'] )
+    X_test, X_val, y_test, y_val = train_test_split(XTestval['text'],XTestval['labels'], test_size=test_split)#, stratify= XTestval['labels'] )
 
     #X_test, X_val, y_test, y_val = train_test_split(XTestval['text'],XTestval['labels'], test_size=test_split)#, stratify= XTestval['labels'] )
 
-    #del XTestval
-    #gc.collect()
+    del XTestval
+    gc.collect()
+
+    XTrain = pd.DataFrame()
+    XTrain['labels'] = y_train.to_frame()
+    XTrain['text'] = X_train.to_frame()
+
+    XTest = pd.DataFrame()
+    XTest['labels'] = y_test.to_frame()
+    XTest['text'] = X_test.to_frame()
+
+    Xval = pd.DataFrame()
+    Xval['labels'] = y_val.to_frame()
+    Xval['text'] = X_val.to_frame()
+    
+    XTest.to_csv(os.path.join(ROOT_DIR,'data','small_tj_single','interm','test','test.csv'),index=False)
+    XTrain.to_csv(os.path.join(ROOT_DIR,'data','small_tj_single','interm','train','train.csv'),index=False)
+    Xval.to_csv(os.path.join(ROOT_DIR,'data','small_tj_single','interm','val','val.csv'),index=False)
+
+    with open(os.path.join(ROOT_DIR,'data','small_tj_single','interm','id2label.json'),'w') as f:
+        json.dump(id2label,f)
+        f.close()
+    with open(os.path.join(ROOT_DIR,'data','small_tj_single','interm','label2id.json'),'w') as f:
+        json.dump(label2id,f)
+        f.close()
+
+    return None
+
+def small_tj_single_cross(test_split:float) -> None:
+
+    path = os.path.join(ROOT_DIR,'data','small_tj','raw','TrainingSet_s34787.csv.xz')
+    df = pd.read_csv(path)
+
+    path_test = os.path.join(ROOT_DIR,'data','small_tj','raw','TestSet_s34787.csv.xz')
+    df_test = pd.read_csv(path_test)
+
+    ####################PEGAR LEGENDAS#########################
+    #aaa = pd.read_csv(os.path.join(ROOT_DIR,'data','big_tj','raw','dataset1_tj.csv'))
+    #bbb = pd.read_csv(os.path.join(ROOT_DIR,'data','big_tj','raw','dataset3_cnj.csv'))
+    #ccc = pd.read_csv(os.path.join(ROOT_DIR,'data','big_tj','raw','dataset_340k.csv'))
+    #aaa = aaa[['grupo_Hid','grupo','assunto_Hid','assunto','assuntoPrincipal','assunto_Hid','assuntos_id','grupo_assunto','assunto_folha']].drop_duplicates()
+    #bbb = bbb[['grupo_Hid','grupo','assunto_Hid','assunto','assuntoPrincipal','id_assunto','assuntos_id','grupo_assunto','assunto_folha']].drop_duplicates()
+    #ccc = ccc[['grupo_Hid','grupo','assuntos_id','assunto_folha']].drop_duplicates()
+    #aaa.to_csv('aa.csv')
+    #bbb.to_csv('bb.csv')
+    #ccc.to_csv('cc.csv')
+    ###########################################################
+
+    pathCTexto_tj = os.path.join(ROOT_DIR,'data','tj','raw','dataset_tjce_v1_trata_texto.csv.zip')
+    #pathCTexto_cnj = os.path.join(ROOT_DIR,'data','big_tj','raw','dataset3_cnj.csv')
+
+    df_c_texto_tj = pd.read_csv(pathCTexto_tj)
+    df_c_texto_tj = df_c_texto_tj[['documento_id','processo_id','texto_tratado']]
+
+    #df_c_texto_cnj[df_c_texto_cnj['grupo_assunto'].str.contains("DIREITO DO TRABALHO")].sample(n=50)
+
+    #df_c_texto_cnj = pd.read_csv(pathCTexto_cnj)
+
+    #df_c_texto_cnj = df_c_texto_cnj[df_c_texto_cnj['texto_tratado'].str.len() <= 32000]
+    #exportar50 = df_c_texto_cnj[df_c_texto_cnj['grupo_assunto'].str.contains("DIREITO DO TRABALHO")].sample(n=50)
+    #exportar50.to_csv("amostrar50.csv",sep=",",index=False,encoding='latin',errors="replace")
+
+    #df_c_texto_cnj = df_c_texto_cnj[['documento_id','processo_id','texto_tratado']]
+
+    df_c_texto = df_c_texto_tj
+    df_c_texto.drop_duplicates(inplace=True)
+
+    df = df.merge(df_c_texto,on=['processo_id','documento_id'])
+    df_test = df_test.merge(df_c_texto,on=['processo_id','documento_id'])
+
+    df['new_id'] = df['processo_id'].astype(str) + '0' + df['documento_id'].astype(str)
+    df['new_id'] = df['new_id'].astype(int)
+    df_test['new_id'] = df_test['processo_id'].astype(str) + '0' + df_test['documento_id'].astype(str)
+    df_test['new_id'] = df_test['new_id'].astype(int)
+
+    df.rename(columns={'texto_tratado':'text'},inplace=True)
+    df_test.rename(columns={'texto_tratado':'text'},inplace=True)
+    df.set_index(['new_id'],drop=True,inplace=True)
+    df_test.set_index(['new_id'],drop=True,inplace=True)
+    
+    cols = ['text','assuntoPrincipal']
+
+    df = df[cols].drop_duplicates()
+    df_test = df_test[cols].drop_duplicates()
+
+    df['split'] = 'train'
+    df_test['split'] = 'test'
+
+    df = pd.concat([df,df_test],ignore_index=True)
+
+    df = df.sample(frac=1)
+
+    #colocar para todos os q tem TJ no nome.
+    df = _deparaCodigos(df)
+
+    unique, counts = np.unique(np.array(df['assuntoPrincipal']), return_counts=True)
+    arr1inds = counts.argsort()
+    sorted_arr2 = unique[arr1inds[::-1]]
+
+    max_classes = len(counts) - len(counts[counts <= 10]) # tirando exemplos com menos de 10 casos
+
+    problemList = sorted_arr2[:max_classes]
+
+    df = df[df['assuntoPrincipal'].isin(problemList)]
+
+    id2label = {idx:label for idx, label in enumerate(problemList.tolist())}
+    label2id = {label:idx for idx, label in enumerate(problemList.tolist())}
+
+    df['labels'] = df['assuntoPrincipal'].apply(lambda row: label2id[row])
+
+    df.drop(columns=['assuntoPrincipal'],inplace=True)
+
+    skf = StratifiedKFold(n_splits=5, random_state=None, shuffle=False)
+
+    crossValDfs_Train = []
+    crossValDfs_Test = []
+
+    X_train, X_val, y_train, y_val = train_test_split(df['text'],df['labels'], test_size=0.05, stratify= df['labels'])
+
+    X_sem_val = pd.DataFrame()
+    X_sem_val['labels'] = y_train.to_frame()
+    X_sem_val['text'] = X_train.to_frame()
+    X_sem_val['doc_id'] = X_sem_val.index
+
+    X_sem_val = X_sem_val.reset_index(drop=True)
+
+    for i, (train_index, test_index) in enumerate(skf.split(X_sem_val['text'], X_sem_val['labels'])):
+        tmpDfTrain = X_sem_val[X_sem_val.index.isin(train_index)].copy()
+        tmpDfTrain['split'] = 'Train'
+        tmpDfTrain['cross'] = i
+        tmpDfTest = X_sem_val[X_sem_val.index.isin(test_index)].copy()
+        tmpDfTest['split'] = 'Test'
+        tmpDfTest['cross'] = i
+        crossValDfs_Train.append(tmpDfTrain.copy())
+        crossValDfs_Test.append(tmpDfTest.copy())
+        tmpDfTrain = None
+        tmpDfTest = None
+
+    allCrossTrain = pd.concat(crossValDfs_Train,ignore_index=True)
+    allCrossTest = pd.concat(crossValDfs_Test,ignore_index=True)
+
+    X_sem_val.set_index(X_sem_val['doc_id'],inplace=True)
+    X_sem_val.drop(columns=['doc_id'],inplace=True)
+
+
+    ############################# FALTA SO A EXPORTACAO DOS ARQUIVOS #########################################
 
     XTrain = pd.DataFrame()
     XTrain['labels'] = y_train.to_frame()

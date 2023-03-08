@@ -30,8 +30,8 @@ def main():
 
     #pipe.big_tj_single(test_split=0.20)
 
-    pipe.small_tj_single(test_split=0.20)
-    app.append_token_hier(dataname='small_tj_single',modelname='rufimelo.Legal-BERTimbau-base',hier_max_seg=64,hier_max_seg_length=128)
+    pipe.big_tj_single(test_split=0.20)
+    app.append_token_hier(dataname='big_tj_single',modelname='rufimelo.Legal-BERTimbau-base',hier_max_seg=64,hier_max_seg_length=64)
 
     #pipe.big_tj_single(test_split=0.05)
     #app.append_token_hier(dataname='big_tj_single',modelname='rufimelo.Legal-BERTimbau-base',hier_max_seg=64,hier_max_seg_length=128)
